@@ -43,7 +43,7 @@ function love.load()
 end
 
 function love.draw()
-	daMap:draw(daCamera)
+	daMap:draw(daCamera, profiler)
 	local zoomX = daCamera:viewport()[3] / daCamera:window()[3]
 	local zoomY = daCamera:viewport()[4] / daCamera:window()[4]
 	
@@ -91,14 +91,30 @@ function love.draw()
 		log.log(err)
 	end
 	
-	--[[
-	if daMap._drawingCells then
-		for i = 1, #daMap._drawingCells do
-			love.graphics.print(tostring(daMap._drawingCells[i]), 10, y)
-			y=y+20
+	local total = 0	
+	y = 200
+	love.graphics.print('=== PROFILES ===', 10, y)
+	y = y + 20
+	
+	for k, v in pairs(profiler:profiles()) do
+		local avg = v.sum / v.count
+		if avg > 0.0000009 then
+			love.graphics.print(k,10, y)				
+			love.graphics.print(v.count, 280, y)				
+			love.graphics.print(string.format('%.5f', v.sum / v.count),
+				330, y)		
+			y=y+15		
 		end
+		total = total + avg
 	end	
-	]]	
+	
+	love.graphics.print('=== TOTAL AVG TIME ===', 10, y)
+	y=y+15
+	love.graphics.print(string.format('%.5f', total), 10, y)
+	y=y+15
+	love.graphics.print('=== EXPECTED FPS ===', 10, y)
+	y=y+15
+	love.graphics.print(string.format('%.5f', 1/total), 10, y)
 end
 
 function love.update(dt)
@@ -155,5 +171,5 @@ function love.update(dt)
 	daCamera:zoom(zoom)
 	daCamera:center(position[1], position[2])
 	
-	daMap:update(dt, daCamera)
+	daMap:update(dt, daCamera, profiler)
 end

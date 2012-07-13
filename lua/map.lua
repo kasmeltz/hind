@@ -71,126 +71,138 @@ end
 --  Update map
 --
 function Map:update(dt, camera, profiler)
-	local cw = camera:window()
-	local cv = camera:viewport()
-	
-	self._zoom[1] = cv[3] / cw[3]
-	self._zoom[2] = cv[3] / cw[3]
-	
-	local ts = self._tileSet:size()	
-	
-	-- get the left, top, right, and bottom
-	-- tiles that the camera can see plus some value that looks for further tiles
-	self._minMax[1] = math.floor(cw[1] / ts[1]) - Map.lookAhead
-	self._minMax[2] = math.floor(cw[2] / ts[2])	- Map.lookAhead
-	self._minMax[3] = math.floor((cw[1] + cw[3]) / ts[1]) + Map.lookAhead
-	self._minMax[4] = math.floor((cw[2] + cw[4]) / ts[2]) + Map.lookAhead
-	-- convert these to the tiles that correspond to map cell boundaries
-	self._cellMinMax[1] = math.floor(self._minMax[1] / Map.cellSize) * Map.cellSize
-	self._cellMinMax[2] = math.floor(self._minMax[2] / Map.cellSize) * Map.cellSize
-	self._cellMinMax[3] = math.floor(self._minMax[3] / Map.cellSize) * Map.cellSize
-	self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize	
-	
-	-- check to see if the cells we may need shortly have been generated
-	for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
-		for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do	
-			local hash = Map.hash{x,y}
-			-- check if the cell exists
-			if not self:cellExists(nil,hash) then
-				log.log('Cell doesnt exist: ' .. hash)
-				-- only generate a hash once
-				if not self._generating[hash] then
-					log.log('Generating cell: ' .. hash)
-					self._generating[hash] = true				
-					self:generateMapCell{x,y}					
-				end
-			end			
-		end		
-	end
+	profiler:profile('Map first part of update',
+		function()		
+			local cw = camera:window()
+			local cv = camera:viewport()
+			
+			self._zoom[1] = cv[3] / cw[3]
+			self._zoom[2] = cv[3] / cw[3]
+			
+			local ts = self._tileSet:size()	
+			
+			-- get the left, top, right, and bottom
+			-- tiles that the camera can see plus some value that looks for further tiles
+			self._minMax[1] = math.floor(cw[1] / ts[1]) - Map.lookAhead
+			self._minMax[2] = math.floor(cw[2] / ts[2])	- Map.lookAhead
+			self._minMax[3] = math.floor((cw[1] + cw[3]) / ts[1]) + Map.lookAhead
+			self._minMax[4] = math.floor((cw[2] + cw[4]) / ts[2]) + Map.lookAhead
+			-- convert these to the tiles that correspond to map cell boundaries
+			self._cellMinMax[1] = math.floor(self._minMax[1] / Map.cellSize) * Map.cellSize
+			self._cellMinMax[2] = math.floor(self._minMax[2] / Map.cellSize) * Map.cellSize
+			self._cellMinMax[3] = math.floor(self._minMax[3] / Map.cellSize) * Map.cellSize
+			self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize	
+		end)
 		
-	-- go through all cells and get rid of ones that are no longer required
-	for k, v in pairs(self._cells) do
-		if not v._visible then
-			v._framesNotUsed = v._framesNotUsed + 1
-			if v._framesNotUsed > Map.unusedFrames then
-				self:disposeMapCell(v)
+	profiler:profile('Map second part of update',		
+		function()
+			-- check to see if the cells we may need shortly have been generated
+			for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
+				for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do	
+					local hash = Map.hash{x,y}
+					-- check if the cell exists
+					if not self:cellExists(nil,hash) then
+						log.log('Cell doesnt exist: ' .. hash)
+						-- only generate a hash once
+						if not self._generating[hash] then
+							log.log('Generating cell: ' .. hash)
+							self._generating[hash] = true				
+							self:generateMapCell{x,y}					
+						end
+					end			
+				end		
 			end
-		end
-	end			
+		end)
+				
+	profiler:profile('Map third part of update',	
+		function()
+			-- go through all cells and get rid of ones that are no longer required
+			for k, v in pairs(self._cells) do
+				if not v._visible then
+					v._framesNotUsed = v._framesNotUsed + 1
+					if v._framesNotUsed > Map.unusedFrames then
+						self:disposeMapCell(v)
+					end
+				end
+			end	
+		end)
 end
 
 --
 --  Draw map
 --
-function Map:draw(camera)	
-	local cw = camera:window()
-	local cv = camera:viewport()
-	local ts = self._tileSet:size()		
-	
-	-- get the left, top, right, and bottom
-	-- tiles that the camera can see plus one tile
-	-- so that no black spaces occur due to fine scrolling
-	self._minMax[1] = math.floor(cw[1] / ts[1]) - 1
-	self._minMax[2] = math.floor(cw[2] / ts[2])	- 1
-	self._minMax[3] = math.floor((cw[1] + cw[3]) / ts[1]) + 1
-	self._minMax[4] = math.floor((cw[2] + cw[4]) / ts[2]) + 1
-	-- convert these to the tiles that correspond to map cell boundaries
-	self._cellMinMax[1] = math.floor(self._minMax[1] / Map.cellSize) * Map.cellSize
-	self._cellMinMax[2] = math.floor(self._minMax[2] / Map.cellSize) * Map.cellSize
-	self._cellMinMax[3] = math.floor(self._minMax[3] / Map.cellSize) * Map.cellSize
-	self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize		
-	
-	-- set all map cells to not visible
-	for k, mc in pairs(self._cells) do
-		mc._visible = false
-	end
-		
-	-- get all of the cells we need to draw
-	local cells = {}		
-	for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
-		for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do			
-			local mc = self:mapCell{x,y}
-			if mc then
-				mc._visible = true
-				mc._framesNotUsed = 0
-				cells[#cells+1] = mc
+function Map:draw(camera, profiler)	
+	profiler:profile('Map draw',
+		function()		
+			local cw = camera:window()
+			local cv = camera:viewport()
+			local ts = self._tileSet:size()		
+			
+			-- get the left, top, right, and bottom
+			-- tiles that the camera can see plus one tile
+			-- so that no black spaces occur due to fine scrolling
+			self._minMax[1] = math.floor(cw[1] / ts[1]) - 1
+			self._minMax[2] = math.floor(cw[2] / ts[2])	- 1
+			self._minMax[3] = math.floor((cw[1] + cw[3]) / ts[1]) + 1
+			self._minMax[4] = math.floor((cw[2] + cw[4]) / ts[2]) + 1
+			-- convert these to the tiles that correspond to map cell boundaries
+			self._cellMinMax[1] = math.floor(self._minMax[1] / Map.cellSize) * Map.cellSize
+			self._cellMinMax[2] = math.floor(self._minMax[2] / Map.cellSize) * Map.cellSize
+			self._cellMinMax[3] = math.floor(self._minMax[3] / Map.cellSize) * Map.cellSize
+			self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize		
+			
+			-- set all map cells to not visible
+			for k, mc in pairs(self._cells) do
+				mc._visible = false
 			end
-		end		
-	end
-	
-	-- coarse adjustment
-	local diffX = (self._minMax[1] - self._cellMinMax[1]) + 1
-	local diffY = (self._minMax[2] - self._cellMinMax[2]) + 1
-	local fineX = math.floor((cw[1] % 32) * self._zoom[1])
-	local fineY = math.floor((cw[2] % 32) * self._zoom[2])
-	-- the starting positions so the cells will be centered in the proper location
-	local startX = (-diffX * ts[1] * self._zoom[1]) - 
-		fineX - (ts[1] / 2 * self._zoom[1])
-	local startY = (-diffY * ts[2] * self._zoom[2]) 
-		- fineY - (ts[2] / 2 * self._zoom[2])
-	-- the current screen position for the cells
-	local screenX = startX
-	local screenY = startY
-	-- the amount to move on the screen after each cell
-	local screenIncX = Map.cellSize * ts[1] * self._zoom[1]
-	local screenIncY = Map.cellSize * ts[2]	* self._zoom[2]
-	-- draw the cells
-	local currentCell = 1
-	for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
-		screenX = startX
-		for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do	
-			-- draw the cell if it exists
-			local cell = cells[currentCell]
-			if cell then
-				local canvas = cells[currentCell]:canvas()
-				love.graphics.draw(canvas, screenX, screenY, 
-					0, self._zoom[1], self._zoom[2])				
+				
+			-- get all of the cells we need to draw
+			local cells = {}		
+			for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
+				for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do			
+					local mc = self:mapCell{x,y}
+					if mc then
+						mc._visible = true
+						mc._framesNotUsed = 0
+						cells[#cells+1] = mc
+					end
+				end		
 			end
-			currentCell = currentCell + 1
-			screenX = screenX + screenIncX
-		end		
-		screenY = screenY + screenIncY
-	end
+			
+			-- coarse adjustment
+			local diffX = (self._minMax[1] - self._cellMinMax[1]) + 1
+			local diffY = (self._minMax[2] - self._cellMinMax[2]) + 1
+			local fineX = math.floor((cw[1] % 32) * self._zoom[1])
+			local fineY = math.floor((cw[2] % 32) * self._zoom[2])
+			-- the starting positions so the cells will be centered in the proper location
+			local startX = (-diffX * ts[1] * self._zoom[1]) - 
+				fineX - (ts[1] / 2 * self._zoom[1])
+			local startY = (-diffY * ts[2] * self._zoom[2]) 
+				- fineY - (ts[2] / 2 * self._zoom[2])
+			-- the current screen position for the cells
+			local screenX = startX
+			local screenY = startY
+			-- the amount to move on the screen after each cell
+			local screenIncX = Map.cellSize * ts[1] * self._zoom[1]
+			local screenIncY = Map.cellSize * ts[2]	* self._zoom[2]
+			-- draw the cells
+			local currentCell = 1
+			for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
+				screenX = startX
+				for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do	
+					-- draw the cell if it exists
+					local cell = cells[currentCell]
+					if cell then
+						local canvas = cells[currentCell]:canvas()
+						love.graphics.draw(canvas, screenX, screenY, 
+							0, self._zoom[1], self._zoom[2])				
+					end
+					currentCell = currentCell + 1
+					screenX = screenX + screenIncX
+				end		
+				screenY = screenY + screenIncY
+			end
+		end)
 end
 
 --
@@ -225,8 +237,11 @@ end
 --  Does a cell exist?
 --
 function Map:cellExists(coords, hash)
-	local exists = false
 	local hash = hash or Map.hash(coords)	
+	
+	if self._cells[hash] then return true end
+	
+	local exists = false	
 	local f = io.open('map/' .. hash .. '.dat', 'rb')
 	if f then 
 		exists = true
