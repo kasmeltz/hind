@@ -12,8 +12,8 @@ require 'map_cell'
 
 local ffi = require 'ffi'	
 
-local io, math, love
-	= io, math, love
+local io, math, pairs, love
+	= io, math, pairs, love
 
 module('objects')
 
@@ -27,6 +27,8 @@ Map.layers = 4
 Map.cellShorts = Map.cellSize * Map.cellSize * Map.layers
 -- the number of bytes in one cell
 Map.cellBytes = Map.cellShorts * 2
+-- the number of frames to keep a map cell around for before it is disposed
+Map.unusedFrames = 120
 
 --
 --  Map constructor
@@ -36,6 +38,10 @@ function Map:_clone(values)
 			
 	-- the cells this map contains
 	o._cells = {}
+
+	o._minMax = {}
+	o._cellMinMax = {} 
+	o._zoom = {}
 	
 	return o
 end
@@ -59,59 +65,103 @@ function Map.hash(coords)
 end
 
 --
---  Draw map
+--  Update map
 --
-function Map:draw(camera)
+function Map:update(dt, camera)
 	local cw = camera:window()
 	local cv = camera:viewport()
 	
-	local zoomX = cv[3] / cw[3]
-	local zoomY = cv[4] / cw[4]
+	self._zoom[1] = cv[3] / cw[3]
+	self._zoom[2] = cv[3] / cw[3]
 	
 	local ts = self._tileSet:size()	
 	
 	-- get the left, top, right, and bottom
 	-- tiles that the camera can see
-	local xmin = math.floor(cw[1] / ts[1])
-	local ymin = math.floor(cw[2] / ts[2])	
-	local xmax = math.floor((cw[1] + cw[3]) / ts[1])
-	local ymax = math.floor((cw[2] + cw[4]) / ts[2])
+	self._minMax[1] = math.floor(cw[1] / ts[1]) - 1
+	self._minMax[2] = math.floor(cw[2] / ts[2])	- 1
+	self._minMax[3] = math.floor((cw[1] + cw[3]) / ts[1]) + 1
+	self._minMax[4] = math.floor((cw[2] + cw[4]) / ts[2]) + 1
+	-- convert these to the tiles that correspond to map cell boundaries
+	self._cellMinMax[1] = math.floor(self._minMax[1] / Map.cellSize) * Map.cellSize
+	self._cellMinMax[2] = math.floor(self._minMax[2] / Map.cellSize) * Map.cellSize
+	self._cellMinMax[3] = math.floor(self._minMax[3] / Map.cellSize) * Map.cellSize
+	self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize	
+	
+	-- set all map cells to not visible
+	for k, v in pairs(self._cells) do
+		v._visible = false
+	end	
+	
+	-- go through the cells that need to be displayed
+	for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
+		for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do			
+			local mc = self:mapCell{x,y}
+			if not mc then
+				self:generateMapCell{x,y}
+			else
+				mc._visible = true
+				mc._framesNotUsed = 0
+			end
+		end		
+	end
+	
+	-- go through all cells and get rid of ones that are no longer required
+	for k, v in pairs(self._cells) do
+		if not v._visible then
+			v._framesNotUsed = v._framesNotUsed + 1
+			if v._framesNotUsed > Map.unusedFrames then
+				self:disposeMapCell(v)
+			end
+		end
+	end
+end
 
-	local cellMinX = math.floor(xmin / Map.cellSize) * Map.cellSize
-	local cellMinY = math.floor(ymin / Map.cellSize) * Map.cellSize
-	local cellMaxX = math.floor(xmax / Map.cellSize) * Map.cellSize
-	local cellMaxY = math.floor(ymax / Map.cellSize) * Map.cellSize
+--
+--  Draw map
+--
+function Map:draw(camera)	
+	local cw = camera:window()
+	local cv = camera:viewport()
+	local ts = self._tileSet:size()		
 	
 	-- get all of the cells we need to draw
-	self._drawingCells = {}		
-	for y = cellMinY, cellMaxY, Map.cellSize do
-		for x = cellMinX, cellMaxX, Map.cellSize do			
-			self._drawingCells[#self._drawingCells+1] = self:mapCell{x,y}
+	local cells = {}		
+	for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
+		for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do			
+			cells[#cells+1] = self:mapCell{x,y}
 		end		
 	end
 	
 	-- coarse adjustment
-	local diffX = xmin - cellMinX
-	local diffY = ymin - cellMinY
+	local diffX = (self._minMax[1] - self._cellMinMax[1]) + 1 
+	local diffY = (self._minMax[2] - self._cellMinMax[2]) + 1
 	-- fine adjustment
-	local fineX = math.floor((cw[1] % 32) * zoomX)
-	local fineY = math.floor((cw[2] % 32) * zoomY)
-	-- the starting positions for the cells
-	local startX = (-diffX * ts[1] * zoomX) - fineX 
-	local startY = (-diffY * ts[2] * zoomY) - fineY	
+	local fineX = math.floor((cw[1] % 32) * self._zoom[1])
+	local fineY = math.floor((cw[2] % 32) * self._zoom[2])
+	-- the starting positions so the cells will be centered in the proper location
+	local startX = (-diffX * ts[1] * self._zoom[1]) - 
+		fineX - (ts[1] / 2 * self._zoom[1])
+	local startY = (-diffY * ts[2] * self._zoom[2]) 
+		- fineY - (ts[2] / 2 * self._zoom[2])
 	-- the current screen position for the cells
 	local screenX = startX
 	local screenY = startY
 	-- the amount to move on the screen after each cell
-	local screenIncX = Map.cellSize * ts[1] * zoomX
-	local screenIncY = Map.cellSize * ts[2]	* zoomY
+	local screenIncX = Map.cellSize * ts[1] * self._zoom[1]
+	local screenIncY = Map.cellSize * ts[2]	* self._zoom[2]
 	-- draw the cells
 	local currentCell = 1
-	for y = cellMinY, cellMaxY, Map.cellSize do
+	for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
 		screenX = startX
-		for x = cellMinX, cellMaxX, Map.cellSize do			
-			local canvas = self._drawingCells[currentCell]:canvas()
-			love.graphics.draw(canvas, screenX, screenY, 0, zoomX, zoomY)	
+		for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do	
+			-- draw the cell if it exists
+			local cell = cells[currentCell]
+			if cell then
+				local canvas = cells[currentCell]:canvas()
+				love.graphics.draw(canvas, screenX, screenY, 
+					0, self._zoom[1], self._zoom[2])	
+			end
 			currentCell = currentCell + 1
 			screenX = screenX + screenIncX
 		end		
@@ -134,10 +184,16 @@ end
 function Map:mapCell(coords)
 	local hash, x, y = Map.hash(coords)
 	local mc = self._cells[hash]
+	
 	if not mc then
 		mc = self:loadMapCell(hash, {x,y})
+	end
+	
+	if mc then
+		mc._hash = hash
 		self._cells[hash] = mc
 	end
+	
 	return mc
 end
 
@@ -145,38 +201,17 @@ end
 --  Loads a map cell from disk
 --	
 function Map:loadMapCell(hash, coords)
+	log.log('Loading map cell: ' .. hash)
+	
 	local filename = 'map/' .. hash .. '.dat'
-	local tileData
 	local f = io.open(filename, 'rb')
 	if not f then 
-		local block = Map.cellSize * Map.cellSize
 		-- cell does not yet exist!
-		-- n.b. this should be generated at this point
-		tileData = ffi.new('uint16_t[?]', Map.cellShorts)	
-		for i = 0, block - 1 do
-			local tileType = math.floor(math.random()*3)		
-			tileData[i] = (tileType * 18) + 11
-			if math.random() > 0.3 then
-				tileData[i] = (tileType * 18) + (math.random() * 3) + 16
-			end
-		end
-		for i = block, block * 2 - 1 do
-			local tileType = math.floor(math.random()*3)		
-			tileData[i] = (tileType * 18) + (math.random() * 15)
-		end		
-		for i = block * 2, block * 3 - 1 do
-			local tileType = math.floor(math.random()*3)		
-			tileData[i] = (tileType * 18) + (math.random() * 15)
-		end				
-		local bytes = ffi.string(tileData, Map.cellBytes)
-		local f = io.open('map/'..hash..'.dat','wb')
-		f:write(bytes)
-		f:close()				
-	else
-		-- read cell from file
-		tileData = f:read('*all')
-		f:close()
+		return nil
 	end
+	-- read cell from file
+	local tileData = f:read('*all')
+	f:close()
 	
 	local mc = MapCell{ self._tileSet, 
 		{Map.cellSize, Map.cellSize}, 
@@ -187,6 +222,63 @@ function Map:loadMapCell(hash, coords)
 	ffi.copy(mc._tiles, tileData, Map.cellBytes)
 	
 	return mc	
+end
+
+--
+--  Disposes of a map cell
+--	
+function Map:disposeMapCell(mc)
+	log.log('Disposing map cell: ' .. mc._hash)
+	
+	-- save the map cell to disk
+	self:saveMapCell(mc)
+	-- remove the references to all resources
+	self._cells[mc._hash] = nil
+end
+
+--
+--  Saves a map cell to disk
+--	
+function Map:saveMapCell(mc)
+	log.log('Saving map cell: ' .. mc._hash)
+	
+	local filename = 'map/' .. mc._hash .. '.dat'
+	local bytes = ffi.string(mc._tiles, Map.cellBytes)
+	local f = io.open(filename ,'wb')
+	f:write(bytes)
+	f:close()
+end
+
+--
+--  Generates a map cell
+--
+function Map:generateMapCell(coords)
+	local hash, x, y = Map.hash(coords)	
+	local filename = 'map/' .. hash .. '.dat'	
+	log.log('Generating map cell: ' .. hash)
+	
+	local tileData = ffi.new('uint16_t[?]', Map.cellShorts)	
+	
+	local block = Map.cellSize * Map.cellSize	
+	for i = 0, block - 1 do
+		local tileType = math.floor(math.random()*3)		
+		tileData[i] = (tileType * 18) + 11
+		if math.random() > 0.3 then
+			tileData[i] = (tileType * 18) + (math.random() * 3) + 16
+		end
+	end
+	for i = block, block * 2 - 1 do
+		local tileType = math.floor(math.random()*3)		
+		tileData[i] = (tileType * 18) + (math.random() * 15)
+	end		
+	for i = block * 2, block * 3 - 1 do
+		local tileType = math.floor(math.random()*3)		
+		tileData[i] = (tileType * 18) + (math.random() * 15)
+	end				
+	local bytes = ffi.string(tileData, Map.cellBytes)
+	local f = io.open(filename,'wb')
+	f:write(bytes)
+	f:close()	
 end
 
 --[[

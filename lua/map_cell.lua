@@ -45,6 +45,10 @@ function MapCell:_clone(values)
 			o._extents[3], o._extents[4])
 	end
 		
+	o._visible = false
+	o._framesNotUsed = 0	
+	o._hash = false
+	
 	return o
 end
 

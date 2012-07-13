@@ -34,10 +34,13 @@ function love.load()
 	daCamera:viewport(0,0,screenWidth,screenHeight)
 	
 	zoom = 1
+	position = {500000*32,500000*32}
 end
 
 function love.draw()
 	daMap:draw(daCamera)
+	local zoomX = daCamera:viewport()[3] / daCamera:window()[3]
+	local zoomY = daCamera:viewport()[4] / daCamera:window()[4]
 	
 	local rects = {
 		{ 500000, 500000 },
@@ -56,10 +59,13 @@ function love.draw()
 	}
 		
 	for k, v in pairs(rects) do
-		local x = v[1]*32 - daCamera:window()[1]
-		local y = v[2]*32 - daCamera:window()[2]	
-		love.graphics.rectangle('line', x, y, 32, 32)
+		local x = ((v[1] * 32) - daCamera:window()[1]) * zoomX - ((32 / 2) * zoomX)
+		local y = ((v[2] * 32) - daCamera:window()[2]) * zoomY - ((32 / 2) * zoomY)
+		love.graphics.rectangle('line', x, y, 32 * zoomX, 32 * zoomY)
 	end
+	
+	love.graphics.line(400-64,0,400-64,600)
+	love.graphics.line(400+64,0,400+64,600)
 	
 	love.graphics.print('FPS: '..love.timer.getFPS(), 10, 0)	
 	
@@ -86,19 +92,19 @@ end
 
 function love.update(dt)
 	if love.keyboard.isDown('right') then
-		daCamera._window[1] = daCamera._window[1] + 1
+		position[1] = position[1] + 1
 	end
 
 	if love.keyboard.isDown('left') then
-		daCamera._window[1] = daCamera._window[1] - 1
+		position[1] = position[1] - 1
 	end	
 
 	if love.keyboard.isDown('up') then
-		daCamera._window[2] = daCamera._window[2] - 1
+		position[2] = position[2] - 1
 	end
 
 	if love.keyboard.isDown('down') then
-		daCamera._window[2] = daCamera._window[2] + 1
+		position[2] = position[2] + 1
 	end		
 	
 	if love.keyboard.isDown('q') then
@@ -134,6 +140,9 @@ function love.update(dt)
 	end		
 
 	if zoom < 0.1 then zoom = 0.1 end
-	
+		
 	daCamera:zoom(zoom)
+	daCamera:center(position[1], position[2])
+	
+	daMap:update(dt, daCamera)
 end
