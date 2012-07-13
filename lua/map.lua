@@ -149,16 +149,25 @@ function Map:loadMapCell(hash, coords)
 	local tileData
 	local f = io.open(filename, 'rb')
 	if not f then 
+		local block = Map.cellSize * Map.cellSize
 		-- cell does not yet exist!
 		-- n.b. this should be generated at this point
 		tileData = ffi.new('uint16_t[?]', Map.cellShorts)	
-		for i = 0, Map.cellSize * Map.cellSize do
+		for i = 0, block - 1 do
 			local tileType = math.floor(math.random()*3)		
 			tileData[i] = (tileType * 18) + 11
 			if math.random() > 0.3 then
 				tileData[i] = (tileType * 18) + (math.random() * 3) + 16
 			end
 		end
+		for i = block, block * 2 - 1 do
+			local tileType = math.floor(math.random()*3)		
+			tileData[i] = (tileType * 18) + (math.random() * 15)
+		end		
+		for i = block * 2, block * 3 - 1 do
+			local tileType = math.floor(math.random()*3)		
+			tileData[i] = (tileType * 18) + (math.random() * 15)
+		end				
 		local bytes = ffi.string(tileData, Map.cellBytes)
 		local f = io.open('map/'..hash..'.dat','wb')
 		f:write(bytes)
