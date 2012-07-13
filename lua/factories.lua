@@ -57,18 +57,11 @@ end
 --	provided tileset and size
 --
 --  Inputs:
---		ts - the name of the tileset to use 
---			for this map
---		size - an idexed table
---			[1] - width of map in tiles
---			[2] - height of map in tiles
+--		tileSet	- string
+--			the name of the tileset to use for this map
 --
 function createMap(ts, size)
-	local t = {}	
-	t._tileSet = tileSets[ts]
-	t._sizeInTiles = size	
-	local m = map:new(t)	
-	return m	
+	return objects.Map{ tileSets[ts] }
 end
 
 --

@@ -1,186 +1,246 @@
 --[[
-	map.lua
+	map_cell.lua
 	
-	Created JUN-21-2012
+	Created JUL-12-2012
 ]]
+
+local ffi = require 'ffi'
 
 local Object = (require 'object').Object
 
 local log = require 'log'
 
-require 'map_cell'
-
-local ffi = require 'ffi'	
-
-local io, math, love
-	= io, math, love
+local string, love 
+	= string, love
 
 module('objects')
 
-Map = Object{ _init = { '_tileSet' } }
-
--- the size in tiles of the individual map cells
-Map.cellSize = 32
--- the number of maximum layers in the map
-Map.layers = 4
--- the number of uint16s in a map cell
-Map.cellShorts = Map.cellSize * Map.cellSize * Map.layers
--- the number of bytes in one cell
-Map.cellBytes = Map.cellShorts * 2
+MapCell = Object{ _init = { '_tileSet', '_size', '_coords', '_layers' } }
 
 --
---  Map constructor
+--  MapCell constructor
 --
-function Map:_clone(values)
+function MapCell:_clone(values)
 	local o = Object._clone(self,values)
-			
-	-- the cells this map contains
-	o._cells = {}
+				
+	-- create memory to hold the tiles
+	local totalTiles = o._size[1] * o._size[2] * o._layers	
+	o._tiles = ffi.new('uint16_t[?]', totalTiles)
 	
+	o._extents = { o._coords[1], o._coords[2],
+		o._coords[1] + o._size[1] - 1,
+		o._coords[2] + o._size[2] - 1 }
+	
+	-- the canvas that will hold the rendered version
+	-- of this cell
+	local tss = o._tileSet:size()
+	o._canvas = love.graphics.newCanvas(
+		o._size[1] * tss[1], o._size[2] * tss[2])
+		
+	o._rendered = false
+	
+	o.__tostring = function()
+		return string.format('Map Cell -> l: %d, t: %d, r: %d, b: %d', 
+			o._extents[1], o._extents[2], 
+			o._extents[3], o._extents[4])
+	end
+		
 	return o
 end
 
 --
---  Returns a hash value of the supplied coordinates
---  to the nearest coordinates in the map cell structure
+--  Renders the cell's tiles to the canvas
 --
---  Also returns the x and y coordinates that are the
---	the closest cell coordinates to the ones requested
---
---  n.b. very naive implementation
---  assumes that coordinates will never be bigger than
---  1000000 in the first dimension... which is hopefully
---  true for now
---
-function Map.hash(coords)
-	local x = math.floor(coords[1] / Map.cellSize) * Map.cellSize
-	local y = math.floor(coords[2] / Map.cellSize) * Map.cellSize
-	return y * 1000000 + x, x, y
-end
-
---
---  Draw map
---
-function Map:draw(camera)
-	local cw = camera:window()
-	local cv = camera:viewport()
+function MapCell:render()
+	local tss = self._tileSet:size()	
+	local tq = self._tileSet:quads()
 	
-	local zoomX = cv[3] / cw[3]
-	local zoomY = cv[4] / cw[4]
-	
-	local ts = self._tileSet:size()	
-	
-	-- get the left, top, right, and bottom
-	-- tiles that the camera can see
-	local xmin = math.floor(cw[1] / ts[1])
-	local ymin = math.floor(cw[2] / ts[2])	
-	local xmax = math.floor((cw[1] + cw[3]) / ts[1])
-	local ymax = math.floor((cw[2] + cw[4]) / ts[2])
-
-	local cellMinX = math.floor(xmin / Map.cellSize) * Map.cellSize
-	local cellMinY = math.floor(ymin / Map.cellSize) * Map.cellSize
-	local cellMaxX = math.floor(xmax / Map.cellSize) * Map.cellSize
-	local cellMaxY = math.floor(ymax / Map.cellSize) * Map.cellSize
-	
-	-- get all of the cells we need to draw
-	self._drawingCells = {}		
-	for y = cellMinY, cellMaxY, Map.cellSize do
-		for x = cellMinX, cellMaxX, Map.cellSize do			
-			self._drawingCells[#self._drawingCells+1] = self:mapCell{x,y}
-		end		
-	end
-	
-	-- coarse adjustment
-	local diffX = xmin - cellMinX
-	local diffY = ymin - cellMinY
-	-- fine adjustment
-	local fineX = math.floor((cw[1] % 32) * zoomX)
-	local fineY = math.floor((cw[2] % 32) * zoomY)
-	-- the starting positions for the cells
-	local startX = (-diffX * ts[1] * zoomX) - fineX 
-	local startY = (-diffY * ts[2] * zoomY) - fineY	
-	-- the current screen position for the cells
-	local screenX = startX
-	local screenY = startY
-	-- the amount to move on the screen after each cell
-	local screenIncX = Map.cellSize * ts[1] * zoomX
-	local screenIncY = Map.cellSize * ts[2]	* zoomY
-	-- draw the cells
-	local currentCell = 1
-	for y = cellMinY, cellMaxY, Map.cellSize do
-		screenX = startX
-		for x = cellMinX, cellMaxX, Map.cellSize do			
-			local canvas = self._drawingCells[currentCell]:canvas()
-			love.graphics.draw(canvas, screenX, screenY, 0, zoomX, zoomY)	
-			currentCell = currentCell + 1
-			screenX = screenX + screenIncX
-		end		
-		screenY = screenY + screenIncY
-	end
-end
-
---
---  Returns the map cell that starts at the given
---  top left coordinates
---
---  Inputs:
---		coords - an indexed table
---			[1] - horizontal coordinate of leftmost tile
---			[2] - vertcial coordinate of topmost tile
---
---	Outputs:
---		the map cell that is closest to the coordinates
---
-function Map:mapCell(coords)
-	local hash, x, y = Map.hash(coords)
-	local mc = self._cells[hash]
-	if not mc then
-		mc = self:loadMapCell(hash, {x,y})
-		self._cells[hash] = mc
-	end
-	return mc
-end
-
---
---  Loads a map cell from disk
---	
-function Map:loadMapCell(hash, coords)
-	local filename = 'map/' .. hash .. '.dat'
-	local tileData
-	local f = io.open(filename, 'rb')
-	if not f then 
-		-- cell does not yet exist!
-		-- n.b. this should be generated at this point
-		tileData = ffi.new('uint16_t[?]', Map.cellShorts)	
-		for i = 0, Map.cellSize * Map.cellSize do
-			local tileType = math.floor(math.random()*3)		
-			tileData[i] = (tileType * 18) + 11
-			if math.random() > 0.3 then
-				tileData[i] = (tileType * 18) + (math.random() * 3) + 16
+	local s = love.timer.getMicroTime()
+	self._canvas:renderTo( 
+		function()
+			local currentTile = 0
+			local width = self._canvas:getWidth() - 1
+			local height = self._canvas:getHeight() - 1		
+			local sizeX = tss[1]
+			local sizeY = tss[2]
+			-- draw the tiles!
+			for z = 1, self._layers do
+				for y = 0, height, sizeY do
+					for x = 0, width, sizeX do
+						local tile = self._tiles[currentTile]
+						if tile > 0 then										
+							love.graphics.drawq(tq[tile]._image, tq[tile]._quad, x, y)
+						end
+						currentTile = currentTile + 1
+					end
+				end
 			end
-		end
-		local bytes = ffi.string(tileData, Map.cellBytes)
-		local f = io.open('map/'..hash..'.dat','wb')
-		f:write(bytes)
-		f:close()				
-	else
-		-- read cell from file
-		tileData = f:read('*all')
-		f:close()
-	end
+		end)
+	local e = love.timer.getMicroTime()		
+	log.log('Rendering the map cell canvas took: ' .. e-s)
 	
-	local mc = MapCell{ self._tileSet, 
-		{Map.cellSize, Map.cellSize}, 
-		{coords[1], coords[2]}, 
-		Map.layers }
-		
-	-- store the tile data
-	ffi.copy(mc._tiles, tileData, Map.cellBytes)
-	
-	return mc	
+	self._rendered = true
+end
+
+--
+--  Returns the canvas for the MapCell
+--
+function MapCell:canvas()
+	if not self._rendered then self:render() end
+	return self._canvas
+end
+
+-- 
+--  Returns the map cell size
+--
+function MapCell:size()
+	return self._size
 end
 
 --[[
+--
+--  Returns a table with the ids that this cell
+--	occupies
+--
+--	Inputs:
+--		camera - the camera
+--		b - the bucket table
+--
+function MapCell:nearIds(camera, b)
+	local cw = camera:window()
+	local cv = camera:viewport()
+	local ts = self._tileSet:size()
+	local zoomX = cv[3] / cw[3] 
+	local zoomY = cv[4] / cw[4]	
+	local ztx = ts[1] * zoomX
+	local zty = ts[2] * zoomY
+	local tcx = math.floor(b.cellSize / ztx * padding)
+	local tcy = math.floor(b.cellSize / zty * padding)
+						
+	local stx = math.floor(cw[1] / ts[1]) - tcx
+	local etx = stx + math.floor(cv[3] / ztx) + (tcx * 2)
+	local sty = math.floor(cw[2] / ts[2]) - tcy
+	local ety = sty + math.floor(cv[4] / zty) + (tcy * 2)
+	
+	local ids = {}
+		
+	local stx = math.max(1,stx)
+	local etx = math.min(self._sizeInTiles[1] - 1,etx)	
+	local sty = math.max(1,sty)
+	local ety = math.min(self._sizeInTiles[2] - 1,ety)
+	
+	for y = sty, ety do
+		local ty = y * ts[2]
+		local startHash = b.hash(stx * ts[1], ty)
+		local endHash = b.hash(etx * ts[1], ty)
+		for h = startHash, endHash do
+			ids[h] = true
+		end			
+	end
+	
+	return ids
+end
+]]
+
+
+--[[
+--
+--  a table that maps the edge number
+--  to a tile index in the tileset
+--  n.b. this table describes some assumptions about the
+--  layout of the tiles in the tile set
+--	n.b. x 2 there is probably a better way to derive this table
+--	but hard coding works for now
+--
+local edgeToTileIndex = {}
+
+-- top edge
+edgeToTileIndex[4] = 14
+edgeToTileIndex[6] = 14
+edgeToTileIndex[12] = 14
+edgeToTileIndex[14] = 14
+-- bottom edge
+edgeToTileIndex[128] = 8
+edgeToTileIndex[192] = 8
+edgeToTileIndex[384] = 8
+edgeToTileIndex[448] = 8		
+-- left edge	
+edgeToTileIndex[16] = 12
+edgeToTileIndex[18] = 12
+edgeToTileIndex[80] = 12
+edgeToTileIndex[82] = 12
+-- right edge
+edgeToTileIndex[32] = 10
+edgeToTileIndex[40] = 10
+edgeToTileIndex[288] = 10
+edgeToTileIndex[296] = 10
+-- top left edge	
+edgeToTileIndex[20] = 2
+edgeToTileIndex[22] = 2
+edgeToTileIndex[24] = 2
+edgeToTileIndex[28] = 2
+edgeToTileIndex[30] = 2
+edgeToTileIndex[68] = 2
+edgeToTileIndex[72] = 2
+edgeToTileIndex[76] = 2
+edgeToTileIndex[84] = 2
+edgeToTileIndex[86] = 2
+edgeToTileIndex[88] = 2
+edgeToTileIndex[92] = 2
+edgeToTileIndex[94] = 2
+edgeToTileIndex[126] = 2	
+-- top right edge
+edgeToTileIndex[34] = 3
+edgeToTileIndex[36] = 3
+edgeToTileIndex[38] = 3
+edgeToTileIndex[44] = 3
+edgeToTileIndex[46] = 3
+edgeToTileIndex[258] = 3	
+edgeToTileIndex[260] = 3
+edgeToTileIndex[262] = 3
+edgeToTileIndex[290] = 3
+edgeToTileIndex[292] = 3
+edgeToTileIndex[294] = 3
+edgeToTileIndex[298] = 3		
+edgeToTileIndex[300] = 3
+edgeToTileIndex[302] = 3	
+edgeToTileIndex[318] = 3
+-- bottom left edge
+edgeToTileIndex[130] = 5
+edgeToTileIndex[144] = 5
+edgeToTileIndex[146] = 5
+edgeToTileIndex[208] = 5
+edgeToTileIndex[210] = 5
+edgeToTileIndex[218] = 5
+edgeToTileIndex[272] = 5	
+edgeToTileIndex[274] = 5	
+edgeToTileIndex[386] = 5
+edgeToTileIndex[400] = 5
+edgeToTileIndex[402] = 5	
+edgeToTileIndex[464] = 5
+edgeToTileIndex[466] = 5			
+-- bottom right edge
+edgeToTileIndex[96] = 6
+edgeToTileIndex[104] = 6	
+edgeToTileIndex[136] = 6	
+edgeToTileIndex[160] = 6	
+edgeToTileIndex[168] = 6	
+edgeToTileIndex[200] = 6
+edgeToTileIndex[224] = 6
+edgeToTileIndex[232] = 6
+edgeToTileIndex[416] = 6	
+edgeToTileIndex[424] = 6
+edgeToTileIndex[480] = 6
+edgeToTileIndex[488] = 6	
+-- bottom right inner edge
+edgeToTileIndex[2] = 15	
+-- bottom left inner edge
+edgeToTileIndex[8] = 13
+-- top right inner edge
+edgeToTileIndex[64] = 9
+-- top left inner edge
+edgeToTileIndex[256] = 7
+
 --
 --  Adds transition (overlay tiles)
 --  between base terrain types
@@ -190,112 +250,8 @@ end
 --	types start at index 1 and are contiguous in 
 --	a tileset
 --  
-function Map:transitions()
-	local tilesPerType = 18
-	
-	--  a table that maps the edge number
-	--  to a tile index in the tileset
-	--  n.b. this table describes some assumptions about the
-	--  layout of the tiles 
-	local edgeToTileIndex = {}
-	
-	-- top edge
-	edgeToTileIndex[4] = 14
-	edgeToTileIndex[6] = 14
-	edgeToTileIndex[12] = 14
-	edgeToTileIndex[14] = 14
-	
-	-- bottom edge
-	edgeToTileIndex[128] = 8
-	edgeToTileIndex[192] = 8
-	edgeToTileIndex[384] = 8
-	edgeToTileIndex[448] = 8	
-		
-	-- left edge	
-	edgeToTileIndex[16] = 12
-	edgeToTileIndex[18] = 12
-	edgeToTileIndex[80] = 12
-	edgeToTileIndex[82] = 12
-	
-	-- right edge
-	edgeToTileIndex[32] = 10
-	edgeToTileIndex[40] = 10
-	edgeToTileIndex[288] = 10
-	edgeToTileIndex[296] = 10
-	
-	-- top left edge	
-	edgeToTileIndex[20] = 2
-	edgeToTileIndex[22] = 2
-	edgeToTileIndex[24] = 2
-	edgeToTileIndex[28] = 2
-	edgeToTileIndex[30] = 2
-	edgeToTileIndex[68] = 2
-	edgeToTileIndex[72] = 2
-	edgeToTileIndex[76] = 2
-	edgeToTileIndex[84] = 2
-	edgeToTileIndex[86] = 2
-	edgeToTileIndex[88] = 2
-	edgeToTileIndex[92] = 2
-	edgeToTileIndex[94] = 2
-	edgeToTileIndex[126] = 2	
-	
-	-- top right edge
-	edgeToTileIndex[34] = 3
-	edgeToTileIndex[36] = 3
-	edgeToTileIndex[38] = 3
-	edgeToTileIndex[44] = 3
-	edgeToTileIndex[46] = 3
-	edgeToTileIndex[258] = 3	
-	edgeToTileIndex[260] = 3
-	edgeToTileIndex[262] = 3
-	edgeToTileIndex[290] = 3
-	edgeToTileIndex[292] = 3
-	edgeToTileIndex[294] = 3
-	edgeToTileIndex[298] = 3		
-	edgeToTileIndex[300] = 3
-	edgeToTileIndex[302] = 3	
-	edgeToTileIndex[318] = 3
-	
-	-- bottom left edge
-	edgeToTileIndex[130] = 5
-	edgeToTileIndex[144] = 5
-	edgeToTileIndex[146] = 5
-	edgeToTileIndex[208] = 5
-	edgeToTileIndex[210] = 5
-	edgeToTileIndex[218] = 5
-	edgeToTileIndex[272] = 5	
-	edgeToTileIndex[274] = 5	
-	edgeToTileIndex[386] = 5
-	edgeToTileIndex[400] = 5
-	edgeToTileIndex[402] = 5	
-	edgeToTileIndex[464] = 5
-	edgeToTileIndex[466] = 5		
-		
-	-- bottom right edge
-	edgeToTileIndex[96] = 6
-	edgeToTileIndex[104] = 6	
-	edgeToTileIndex[136] = 6	
-	edgeToTileIndex[160] = 6	
-	edgeToTileIndex[168] = 6	
-	edgeToTileIndex[200] = 6
-	edgeToTileIndex[224] = 6
-	edgeToTileIndex[232] = 6
-	edgeToTileIndex[416] = 6	
-	edgeToTileIndex[424] = 6
-	edgeToTileIndex[480] = 6
-	edgeToTileIndex[488] = 6	
-	
-	-- bottom right inner edge
-	edgeToTileIndex[2] = 15	
-		
-	-- bottom left inner edge
-	edgeToTileIndex[8] = 13
-	
-	-- top right inner edge
-	edgeToTileIndex[64] = 9
-	
-	-- top left inner edge
-	edgeToTileIndex[256] = 7
+function MapCell:transitions()
+	local tilesPerType = 18		
 	
 	self._tiles.edges = {}
 	for y = 1, self._sizeInTiles[2] do
@@ -366,7 +322,12 @@ function Map:transitions()
 	
 	print()
 end
+]]
 
+--[[
+--
+--
+--
 function Map:createObject(name, x, y)
 	local ts = self._tileSet:size()
 		
@@ -408,7 +369,9 @@ function Map:createObject(name, x, y)
 	
 	return o
 end	
+]]
 
+--[[
 --
 --  Generates a map
 --
@@ -493,8 +456,9 @@ function Map:generate()
 	end		
 	print()
 end
+]]
 
-
+--[[
 --
 --  Create colliders
 --
@@ -551,7 +515,9 @@ function Map:createColliders(b)
 	
 	print()
 end
+]]
 
+--[[
 --
 --  Registers the map in the proper
 --	collision buckets
@@ -565,52 +531,9 @@ function Map:registerBuckets(buckets)
 		end
 	end
 end
+]]
 
---
---  Returns a table with the ids for the bucket cells
---	that surround the camera.
---
---	Inputs:
---		camera - the camera
---		b - the bucket table
---		padding - the number of cells on either side of the
---			visble tiles to include
---
-function Map:nearIds(camera, b, padding)
-	local cw = camera:window()
-	local cv = camera:viewport()
-	local ts = self._tileSet:size()
-	local zoomX = cv[3] / cw[3] 
-	local zoomY = cv[4] / cw[4]	
-	local ztx = ts[1] * zoomX
-	local zty = ts[2] * zoomY
-	local tcx = math.floor(b.cellSize / ztx * padding)
-	local tcy = math.floor(b.cellSize / zty * padding)
-						
-	local stx = math.floor(cw[1] / ts[1]) - tcx
-	local etx = stx + math.floor(cv[3] / ztx) + (tcx * 2)
-	local sty = math.floor(cw[2] / ts[2]) - tcy
-	local ety = sty + math.floor(cv[4] / zty) + (tcy * 2)
-	
-	local ids = {}
-		
-	local stx = math.max(1,stx)
-	local etx = math.min(self._sizeInTiles[1] - 1,etx)	
-	local sty = math.max(1,sty)
-	local ety = math.min(self._sizeInTiles[2] - 1,ety)
-	
-	for y = sty, ety do
-		local ty = y * ts[2]
-		local startHash = b.hash(stx * ts[1], ty)
-		local endHash = b.hash(etx * ts[1], ty)
-		for h = startHash, endHash do
-			ids[h] = true
-		end			
-	end
-	
-	return ids
-end
-
+--[[
 --
 --  Draw the map
 --
@@ -671,19 +594,5 @@ function Map:draw(camera, drawTable)
 		end
 		cy = cy + zty
 	end
-end
-
--- 
---  Returns the map size
---
-function Map:size()
-	return self._size
-end
-
--- 
---  Returns the map size in tiles
---
-function Map:sizeInTiles()
-	return self._sizeInTiles
 end
 ]]

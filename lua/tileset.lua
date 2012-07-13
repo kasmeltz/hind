@@ -22,6 +22,8 @@ function _M:new(t)
 	t._boundaries = {}
 	
 	for _, i in ipairs(t._images) do
+		local image = love.graphics.newImage(i._image)
+		
 		-- remove the object tiles from the base tiles
 		local excludeTiles = {}		
 		for _, def in pairs(i._definitions or {}) do
@@ -41,10 +43,19 @@ function _M:new(t)
 			for x = 0, i._image:getWidth() - 1, t._size[1] do					
 				xPos[tile] = x
 				yPos[tile] = y				
-				if not excludeTiles[tile] then			
+				if not excludeTiles[tile] then		
+					local q = {}
+					q._image = image
+					q._quad = love.graphics.newQuad(x, y, t._size[1], t._size[2], 
+						image:getWidth(), image:getHeight())					
+					table.insert(t._quads, q)
+					
+					--[[
 					local im = love.image.newImageData(t._size[1], t._size[2])
 					im:paste(i._image,0,0,x,y,t._size[1],t._size[2])
 					table.insert(t._quads, love.graphics.newImage(im))
+					]]
+				
 					
 					if i._heights then
 						table.insert(t._heights, i._heights.default or i._heights[tile])
@@ -58,6 +69,7 @@ function _M:new(t)
 			end
 		end
 		
+		--[[
 		-- build the objects
 		for k, def in pairs(i._definitions or {}) do
 			def._image = {}
@@ -84,6 +96,7 @@ function _M:new(t)
 			def._tiles = nil
 			t._objects[k] = def
 		end
+		]]
 	end
 	
 	for _, i in pairs(t._images) do
