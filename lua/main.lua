@@ -6,12 +6,17 @@
 
 require 'factories'
 require 'map'
+require 'profiler'
 
 local log = require 'log'
 local ffi = require 'ffi'
-print(ffi)
 
 function love.load()
+	profiler = objects.Profiler{}
+	terrainThread = love.thread.newThread('terrainGenerator', 
+		'terrain_generator.lua')
+	terrainThread:start()
+	
 	screenWidth = 800
 	screenHeight = 600
 		local success = love.graphics.setMode( 
@@ -80,6 +85,12 @@ function love.draw()
 	love.graphics.print('Map cells #' .. table.count(daMap._cells), 10, 60)
 	local y = 80
 	
+	local err = terrainThread:get('error')
+	if err then
+		log.log('Error in Terrain Thread!')
+		log.log(err)
+	end
+	
 	--[[
 	if daMap._drawingCells then
 		for i = 1, #daMap._drawingCells do
@@ -139,7 +150,7 @@ function love.update(dt)
 		os.exit()
 	end		
 
-	if zoom < 0.1 then zoom = 0.1 end
+	if zoom < 0.2 then zoom = 0.2 end
 		
 	daCamera:zoom(zoom)
 	daCamera:center(position[1], position[2])
