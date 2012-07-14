@@ -82,7 +82,7 @@ function love.draw()
 		daCamera:window()[3] .. ', ' .. 
 		daCamera:window()[4], 10, 40)	
 			
-	love.graphics.print('Map cells #' .. table.count(daMap._cells), 10, 60)
+	love.graphics.print('Map cells in memory #' .. table.count(daMap._cellsInMemory), 10, 60)
 	local y = 80
 	
 	local err = terrainThread:get('error')
@@ -98,7 +98,7 @@ function love.draw()
 	
 	for k, v in pairs(profiler:profiles()) do
 		local avg = v.sum / v.count
-		if avg > 0.0000009 then
+		if avg > 0 then
 			love.graphics.print(k,10, y)				
 			love.graphics.print(v.count, 280, y)				
 			love.graphics.print(string.format('%.5f', v.sum / v.count),

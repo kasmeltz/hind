@@ -12,9 +12,15 @@ require 'string_ext'
 
 local thread = love.thread.getThread()
 
-function generateCell(coords)
+function generateCell(coords, replace)
 	local hash, x, y = objects.Map.hash(coords)	
 	local filename = 'map/' .. hash .. '.dat'	
+	local f = io.open(filename,'r')
+	if f and not replace then 
+		-- cell already exists
+		f:close()
+		return 
+	end
 	log.log('Generating map cell: ' .. hash)
 	
 	local tileData = ffi.new('uint16_t[?]', objects.Map.cellShorts)	
@@ -41,20 +47,19 @@ function generateCell(coords)
 	f:close()	
 end
 
--- signal that we are ready for a command
-thread:set('ready', 'ok')
 -- loop forever mwahahaha!
 while true do
 	local msg = thread:get('cmd')	
 	if msg then
+		-- log the message
 		log.log('Received message! "' .. msg .. '"')
 		local cmd = msg:split('#')
 		if cmd[1] == 'generate' then
-			generateCell{cmd[2], cmd[3]}
-		end
-		
-		-- ready for next command
-		thread:set('ready', 'ok')
+			for i = 2, #cmd, 2 do
+				if cmd[i] and cmd[i+1] then
+					generateCell{cmd[i], cmd[i+1]}
+				end
+			end
+		end		
 	end
 end
-

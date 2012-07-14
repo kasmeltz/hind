@@ -12,8 +12,8 @@ require 'map_cell'
 
 local ffi = require 'ffi'	
 
-local io, math, pairs, love
-	= io, math, pairs, love
+local io, math, pairs, love, ipairs
+	= io, math, pairs, love, ipairs
 
 module('objects')
 
@@ -30,7 +30,7 @@ Map.cellBytes = Map.cellShorts * 2
 -- the number of frames to keep a map cell around for before it is disposed
 Map.unusedFrames = 120
 -- the number of tile to generate ahead
-Map.lookAhead = 1
+Map.lookAhead = Map.cellSize * 4
 
 --
 --  Map constructor
@@ -39,12 +39,11 @@ function Map:_clone(values)
 	local o = Object._clone(self,values)
 			
 	-- the cells this map contains
-	o._cells = {}
-
+	o._cellsInMemory = {}
+	o._generated = {}
 	o._minMax = {}
 	o._cellMinMax = {} 
 	o._zoom = {}	
-	o._generating = {}
 	
 	return o
 end
@@ -94,30 +93,35 @@ function Map:update(dt, camera, profiler)
 			self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize	
 		end)
 		
-	profiler:profile('Map second part of update',		
-		function()
+	profiler:profile('Map second part of update',
+		function()				
+			local generate = {}	
 			-- check to see if the cells we may need shortly have been generated
 			for y = self._cellMinMax[2], self._cellMinMax[4], Map.cellSize do
 				for x = self._cellMinMax[1], self._cellMinMax[3], Map.cellSize do	
-					local hash = Map.hash{x,y}
+					local coords = {x,y}
+					local hash = Map.hash(coords)								
 					-- check if the cell exists
-					if not self:cellExists(nil,hash) then
-						log.log('Cell doesnt exist: ' .. hash)
-						-- only generate a hash once
-						if not self._generating[hash] then
-							log.log('Generating cell: ' .. hash)
-							self._generating[hash] = true				
-							self:generateMapCell{x,y}					
-						end
-					end			
+					if not self._cellsInMemory[hash] and not self._generated[hash] then
+						if not self:cellExists(coords,hash) then
+							log.log('Cell doesnt exist: ' .. hash)
+							generate[#generate+1] = coords			
+						end													
+						self._generated[hash] = true
+					end														
 				end		
 			end
+					
+			if #generate > 0 then
+				log.log('Number of cells to generate: ' .. #generate)
+				self:generateMapCells(generate)
+			end
 		end)
-				
+			
 	profiler:profile('Map third part of update',	
 		function()
 			-- go through all cells and get rid of ones that are no longer required
-			for k, v in pairs(self._cells) do
+			for k, v in pairs(self._cellsInMemory) do
 				if not v._visible then
 					v._framesNotUsed = v._framesNotUsed + 1
 					if v._framesNotUsed > Map.unusedFrames then
@@ -152,7 +156,7 @@ function Map:draw(camera, profiler)
 			self._cellMinMax[4] = math.floor(self._minMax[4] / Map.cellSize) * Map.cellSize		
 			
 			-- set all map cells to not visible
-			for k, mc in pairs(self._cells) do
+			for k, mc in pairs(self._cellsInMemory) do
 				mc._visible = false
 			end
 				
@@ -219,7 +223,7 @@ end
 --
 function Map:mapCell(coords)
 	local hash, x, y = Map.hash(coords)
-	local mc = self._cells[hash]
+	local mc = self._cellsInMemory[hash]
 	
 	if not mc then
 		mc = self:loadMapCell({x,y}, hash)
@@ -227,7 +231,8 @@ function Map:mapCell(coords)
 	
 	if mc then
 		mc._hash = hash
-		self._cells[hash] = mc
+		self._cellsInMemory[hash] = mc
+		self._generated[hash] = nil
 	end
 	
 	return mc
@@ -237,9 +242,8 @@ end
 --  Does a cell exist?
 --
 function Map:cellExists(coords, hash)
+	log.log('Checking if cell exists: ' .. hash)
 	local hash = hash or Map.hash(coords)	
-	
-	if self._cells[hash] then return true end
 	
 	local exists = false	
 	local f = io.open('map/' .. hash .. '.dat', 'rb')
@@ -285,7 +289,7 @@ function Map:disposeMapCell(mc)
 	-- save the map cell to disk
 	self:saveMapCell(mc)
 	-- remove the references to all resources
-	self._cells[mc._hash] = nil
+	self._cellsInMemory[mc._hash] = nil
 end
 
 --
@@ -300,12 +304,16 @@ function Map:saveMapCell(mc)
 end
 
 --
---  Generates a map cell
+--  Generates a list of map cells
 --
-function Map:generateMapCell(coords)
-	local thread = love.thread.getThread('terrainGenerator')
-	local msg = thread:demand('ready')	
-	thread:set('cmd','generate#' .. coords[1] .. '#' .. coords[2])
+function Map:generateMapCells(cells)
+	local cmd = 'generate#'	
+	for k, v in ipairs(cells) do	
+		log.log('Signalling generating thread to generate: ' .. v[1] .. ',' .. v[2])
+		cmd = cmd .. v[1] .. '#' .. v[2] .. '#'
+	end	
+	local thread = love.thread.getThread('terrainGenerator')	
+	thread:set('cmd',cmd)
 end
 
 --[[
