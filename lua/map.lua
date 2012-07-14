@@ -28,7 +28,7 @@ Map.cellShorts = Map.cellSize * Map.cellSize * Map.layers
 -- the number of bytes in one cell
 Map.cellBytes = Map.cellShorts * 2
 -- the number of frames to keep a map cell around for before it is disposed
-Map.unusedFrames = 120
+Map.unusedFrames = 600
 -- the number of tile to generate ahead
 Map.lookAhead = Map.cellSize * 4
 

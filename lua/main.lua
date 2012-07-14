@@ -165,8 +165,12 @@ function love.update(dt)
 	if love.keyboard.isDown('/') then
 		os.exit()
 	end		
+	
+	if love.keyboard.isDown(',') then
+		profiler:reset()
+	end		
 
-	if zoom < 0.2 then zoom = 0.2 end
+	if zoom < 0.1 then zoom = 0.1 end
 		
 	daCamera:zoom(zoom)
 	daCamera:center(position[1], position[2])
