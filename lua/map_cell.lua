@@ -87,6 +87,19 @@ function MapCell:render()
 end
 
 --
+--  Sets the tile data for this map cell
+--
+function MapCell:setTileData(data, bytes)
+	ffi.copy(self._tiles, data, bytes)
+	
+	-- @todo reconstruct the tiles as necessary
+	-- esp. collision boundaries
+	
+	-- @todo reconstruct the map objects
+	-- including collision boundaries
+end
+
+--
 --  Returns the canvas for the MapCell
 --
 function MapCell:canvas()

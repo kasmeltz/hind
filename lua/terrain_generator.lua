@@ -23,7 +23,7 @@ function generateCell(coords, replace)
 	end
 	log.log('Generating map cell: ' .. hash)
 	
-	local tileData = ffi.new('uint16_t[?]', objects.Map.cellShorts)	
+	local tileData = ffi.new('uint16_t[?]', objects.Map.cellTileShorts)	
 	
 	local block = objects.Map.cellSize * objects.Map.cellSize	
 	for i = 0, block - 1 do
@@ -41,7 +41,7 @@ function generateCell(coords, replace)
 		local tileType = math.floor(math.random()*3)		
 		tileData[i] = (tileType * 18) + (math.random() * 15)
 	end				
-	local bytes = ffi.string(tileData, objects.Map.cellBytes)
+	local bytes = ffi.string(tileData, objects.Map.cellTileBytes)
 	local f = io.open(filename,'wb')
 	f:write(bytes)
 	f:close()	

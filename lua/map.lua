@@ -12,8 +12,8 @@ require 'map_cell'
 
 local ffi = require 'ffi'	
 
-local io, math, pairs, love, ipairs
-	= io, math, pairs, love, ipairs
+local io, math, pairs, love, ipairs, collectgarbage
+	= io, math, pairs, love, ipairs, collectgarbage
 
 module('objects')
 
@@ -24,11 +24,11 @@ Map.cellSize = 32
 -- the number of maximum layers in the map
 Map.layers = 4
 -- the number of uint16s in a map cell
-Map.cellShorts = Map.cellSize * Map.cellSize * Map.layers
+Map.cellTileShorts = Map.cellSize * Map.cellSize * Map.layers
 -- the number of bytes in one cell
-Map.cellBytes = Map.cellShorts * 2
+Map.cellTileBytes = Map.cellTileShorts * 2
 -- the number of frames to keep a map cell around for before it is disposed
-Map.unusedFrames = 600
+Map.unusedFrames = 1200
 -- the number of tile to generate ahead
 Map.lookAhead = Map.cellSize * 4
 
@@ -276,7 +276,7 @@ function Map:loadMapCell(coords, hash)
 		Map.layers }
 		
 	-- store the tile data
-	ffi.copy(mc._tiles, tileData, Map.cellBytes)
+	mc:setTileData(tileData, Map.cellTileBytes)	
 	
 	return mc	
 end
@@ -289,7 +289,8 @@ function Map:disposeMapCell(mc)
 	-- save the map cell to disk
 	self:saveMapCell(mc)
 	-- remove the references to all resources
-	self._cellsInMemory[mc._hash] = nil
+	self._cellsInMemory[mc._hash] = nil	
+	collectgarbage('collect')
 end
 
 --
@@ -297,7 +298,7 @@ end
 --	
 function Map:saveMapCell(mc)
 	log.log('Saving map cell: ' .. mc._hash)
-	local bytes = ffi.string(mc._tiles, Map.cellBytes)
+	local bytes = ffi.string(mc._tiles, Map.cellTileBytes)
 	local f = io.open('map/' .. mc._hash .. '.dat' ,'wb')
 	f:write(bytes)
 	f:close()
