@@ -36,8 +36,8 @@ Map.maximumRows = Map.cellSize * 50
 -- the maximum number of tile rows in memory at once
 Map.maximumColumns = Map.cellSize * 50
 
-Map.disposeCellsPerFrame = 1
-Map.loadCellsPerFrame = 2
+Map.disposeCellsPerFrame = 8
+Map.loadCellsPerFrame = 8
 
 --
 --  Returns a hash value of the supplied coordinates
@@ -85,6 +85,7 @@ function Map:_clone(values)
 	o._cellsShouldBeVisible = {}
 	o._walkableMatrix = ffi.new('uint8_t[?]', 
 		Map.maximumRows * Map.maximumColumns)
+	o._walkableDirty = false
 	
 	local thread = love.thread.getThread('fileio')
 	o._communicator = ThreadCommunicator{ thread }	
@@ -137,41 +138,27 @@ function Map:calculateMinMax(camera, l, t, r, b)
 end
 
 --
---  Update map
+--  Converts a position to a tile coordinate
 --
-function Map:update(dt, camera, profiler)
-	-- go through all cells and mark any that are no longer required
-	--profiler:profile('marking map cells for disposal', function()						
-			for k, v in pairs(self._cellsInMemory) do
-				if not v._visible then
-					v._framesNotUsed = v._framesNotUsed + 1
-					if v._framesNotUsed > Map.unusedFrames then
-						self._cellsToDispose[v._hash] = v
-					end
-				end
-			end	
-		--end) -- profile
+function Map:posToTile(x, y)
+	local ts = self._tileSet:size()
+	return math.floor(x / ts[1]), math.floor(y / ts[2])
+end
+
+--
+--  Dispose cells that need to be disposed up to the maximum
+--  number allowed per frame
+--
+function Map:disposeCells()
+	local cellsDisposed = 0
+	for k, v in pairs(self._cellsToDispose) do
+		self:disposeMapCell(v)
+		self._cellsToDispose[k] = nil
+		cellsDisposed = cellsDisposed + 1
+		if cellsDisposed >= Map.disposeCellsPerFrame then break end
+	end	
 	
-	-- dispose cells if there are any to dispose
-	--profiler:profile('disposing map cells', function()			
-			local cellsDisposed = 0
-			for k, v in pairs(self._cellsToDispose) do
-				self:disposeMapCell(v)
-				self._cellsToDispose[k] = nil
-				cellsDisposed = cellsDisposed + 1
-				if cellsDisposed >= Map.disposeCellsPerFrame then break end
-			end	
-		--end) -- profile
-	
-	-- receive any map cells that have been loaded
-	--profiler:profile('receiving loaded map cells', function()
-			self:receiveLoadedCells()
-		--end) -- profile
-		
-	-- cancel the loading of any map cells that no longer need to be loaded
-	--profiler:profile('cancelling non needed map cells', function()
-			self:cancelLoadingCells()
-		--end) -- profile		
+	return cellsDisposed
 end
 
 --
@@ -204,6 +191,8 @@ function Map:calculateWalkableMatrix()
 		self._pathCommunicator:send('setMatrix', marshal.encode(self._cellMinMax))
 		self._pathCommunicator:send('setMatrix', 
 			ffi.string(self._walkableMatrix, Map.maximumRows * Map.maximumColumns))
+			
+		self._walkableDirty = false
 			
 	end) -- profile
 end
@@ -249,6 +238,191 @@ function Map:cancelLoadingCells()
 			loading[k] = nil
 		end
 	end
+end
+
+--
+--  Returns the map cell that starts at the given
+--  top left coordinates
+--
+--  Inputs:
+--		coords - an indexed table
+--			[1] - horizontal coordinate of leftmost tile
+--			[2] - vertcial coordinate of topmost tile
+--
+--	Outputs:
+--		the map cell that is closest to the coordinates
+--
+function Map:mapCell(x, y)
+	local hash, x, y = Map.hash(x, y)
+	self._cellsToDispose[hash] = nil
+	
+	local mc = self._cellsInMemory[hash]	
+	
+	if not mc then
+		if not self._cellsLoading[hash] then
+			self._cellsLoading[hash] = true
+			self:loadMapCell(hash)
+		end		
+	end
+	
+	return mc, hash
+end
+
+--
+--  Loads a map cell  from disk using fileio thread
+--
+function Map:loadMapCell(hash)
+	self._communicator:send('loadMapCell',hash)
+end
+
+--
+--  Receives any actors that have been loaded
+--	by the file io thread
+--
+function Map:receiveLoadedCells()
+	local profiler = self._profiler	
+	local cellsLoaded = 0
+	local received = false
+	repeat
+		received = false
+		local hash = self._communicator:receive('loadedMapCell')
+		if hash and hash ~= 0 then
+			local tiles = self._communicator:demand('loadedMapCell')
+			local area = self._communicator:demand('loadedMapCell')
+			local actors = self._communicator:demand('loadedMapCell')	
+			self._cellsLoading[hash] = nil
+			received = true	
+			
+			if self._cellsShouldBeVisible[hash] then
+			
+				--profiler:profile('creating map cells', function()					
+					local x, y = Map.unhash(hash)			
+					local mc = MapCell{ self._tileSet, 
+						{Map.cellSize, Map.cellSize}, {x, y}, Map.layers }
+					mc._hash = hash			
+					self._cellsInMemory[hash] = mc				
+					mc:data(marshal.decode(tiles), area, marshal.decode(actors))
+					mc:registerBuckets(self._buckets)
+					if self.on_cell_load then
+						self:on_cell_load(mc)
+					end
+				--end) -- profile
+				
+				cellsLoaded = cellsLoaded + 1
+				if cellsLoaded >= Map.loadCellsPerFrame then 
+					break
+				end				
+			end
+		end
+	until not received 
+	
+	return cellsLoaded
+end
+
+--
+--  Saves a map cell to disk using fileio thread
+--	
+function Map:saveMapCell(mc)
+	self._communicator:send('saveMapCell',mc._hash)
+	local s = marshal.encode(mc._tiles)
+	self._communicator:send('saveMapCell',s)
+	
+	self._communicator:send('saveMapCell',mc._area)	
+	
+	local s = marshal.encode(mc._actors)	
+	self._communicator:send('saveMapCell',s)		
+end
+
+--
+--  Disposes of a map cell
+--	
+function Map:disposeMapCell(mc)
+	-- update cell's actor data
+	local actors = {}
+	for k, _ in pairs(mc._bucketIds) do
+		if self._buckets['count' .. k] == 1 then
+			-- add any actors to actor data
+			for _, v in pairs(self._buckets[k]) do
+				if v._id then
+					actors[#actors+1] = v._id
+				end
+			end
+		end
+	end
+	
+	mc._actors = actors
+	
+	-- save the map cell to disk
+	self:saveMapCell(mc)
+	
+	if self.on_cell_dispose then
+		self:on_cell_dispose(mc)
+	end
+	
+	-- unregister the map cell from the collision buckets
+	mc:unregisterBuckets(self._buckets)
+	-- remove the references to all resources
+	self._cellsInMemory[mc._hash] = nil	
+end
+
+--
+--  Returns a table with the ids for the bucket cells
+--	that are currently visible
+--
+function Map:visibleIds(id_table)
+	local ids = id_table
+	for k, v in pairs(ids) do
+		ids[k] = nil
+	end
+	
+	for _, cell in pairs(self._cellsInMemory) do
+		if cell._visible then
+			for id, _ in pairs(cell._bucketIds) do
+				ids[id] = true
+			end
+		end
+	end
+end
+
+--
+--  Update map
+--
+function Map:update(dt, camera, profiler)
+	-- go through all cells and mark any that are no longer required
+	--profiler:profile('marking map cells for disposal', function()						
+			for k, v in pairs(self._cellsInMemory) do
+				if not v._visible then
+					v._framesNotUsed = v._framesNotUsed + 1
+					if v._framesNotUsed > Map.unusedFrames then
+						self._cellsToDispose[v._hash] = v
+					end
+				end
+			end	
+		--end) -- profile
+	
+	-- dispose cells if there are any to dispose
+	--profiler:profile('disposing map cells', function()			
+			local cellsDisposed = self:disposeCells()
+		--end) -- profile
+	
+	-- receive any map cells that have been loaded
+	--profiler:profile('receiving loaded map cells', function()
+			local cellsReceived = self:receiveLoadedCells()
+		--end) -- profile
+		
+	-- determine if we need to update the walkable matrix
+	if cellsDisposed > 0 or cellsReceived > 0 then
+		self._walkableDirty = true
+	else
+		if self._walkableDirty then
+			self:calculateWalkableMatrix()
+		end
+	end
+		
+	-- cancel the loading of any map cells that no longer need to be loaded
+	--profiler:profile('cancelling non needed map cells', function()
+			self:cancelLoadingCells()
+		--end) -- profile		
 end
 
 --
@@ -301,161 +475,4 @@ function Map:draw(camera)
 		end		
 		screenY = screenY + screenIncY
 	end
-end
-
---
---  Returns the map cell that starts at the given
---  top left coordinates
---
---  Inputs:
---		coords - an indexed table
---			[1] - horizontal coordinate of leftmost tile
---			[2] - vertcial coordinate of topmost tile
---
---	Outputs:
---		the map cell that is closest to the coordinates
---
-function Map:mapCell(x, y)
-	local hash, x, y = Map.hash(x, y)
-	self._cellsToDispose[hash] = nil
-	
-	local mc = self._cellsInMemory[hash]	
-	
-	if not mc then
-		if not self._cellsLoading[hash] then
-			self._cellsLoading[hash] = true
-			self:loadMapCell(hash)
-		end		
-	end
-	
-	return mc, hash
-end
-
---
---  Loads a map cell  from disk using fileio thread
---
-function Map:loadMapCell(hash)
-	self._communicator:send('loadMapCell',hash)
-end
-
---
---  Receives any actors that have been loaded
---	by the file io thread
---
-function Map:receiveLoadedCells()
-	local profiler = self._profiler
-	
-	local cellsLoaded = 0
-	local received = false
-	local cellLoaded = false
-	repeat
-		received = false
-		local hash = self._communicator:receive('loadedMapCell')
-		if hash and hash ~= 0 then
-			local tiles = self._communicator:demand('loadedMapCell')
-			local area = self._communicator:demand('loadedMapCell')
-			local actors = self._communicator:demand('loadedMapCell')	
-			self._cellsLoading[hash] = nil
-			received = true	
-			
-			if self._cellsShouldBeVisible[hash] then
-			
-				--profiler:profile('creating map cells', function()					
-					cellLoaded = true
-					local x, y = Map.unhash(hash)			
-					local mc = MapCell{ self._tileSet, 
-						{Map.cellSize, Map.cellSize}, {x, y}, Map.layers }
-					mc._hash = hash			
-					self._cellsInMemory[hash] = mc				
-					mc:data(marshal.decode(tiles), area, marshal.decode(actors))
-					mc:registerBuckets(self._buckets)
-					if self.on_cell_load then
-						self:on_cell_load(mc)
-					end
-				--end) -- profile
-				
-				cellsLoaded = cellsLoaded + 1
-				if cellsLoaded >= Map.loadCellsPerFrame then 
-					break
-				end				
-			end
-		end
-	until not received 
-	
-	if cellLoaded then self:calculateWalkableMatrix() end
-end
-
---
---  Saves a map cell to disk using fileio thread
---	
-function Map:saveMapCell(mc)
-	self._communicator:send('saveMapCell',mc._hash)
-	local s = marshal.encode(mc._tiles)
-	self._communicator:send('saveMapCell',s)
-	
-	self._communicator:send('saveMapCell',mc._area)	
-	
-	local s = marshal.encode(mc._actors)	
-	self._communicator:send('saveMapCell',s)		
-end
-
---
---  Disposes of a map cell
---	
-function Map:disposeMapCell(mc)
-	-- update cell's actor data
-	local actors = {}
-	for k, _ in pairs(mc._bucketIds) do
-		if self._buckets['count' .. k] == 1 then
-			-- add any actors to actor data
-			for _, v in pairs(self._buckets[k]) do
-				if v._id then
-					actors[#actors+1] = v._id
-				end
-			end
-		end
-	end
-	
-	mc._actors = actors
-	
-	-- save the map cell to disk
-	self:saveMapCell(mc)
-	
-	if self.on_cell_dispose then
-		self:on_cell_dispose(mc)
-	end
-	
-	-- unregister the map cell from the collision buckets
-	mc:unregisterBuckets(self._buckets)
-	-- remove the references to all resources
-	self._cellsInMemory[mc._hash] = nil	
-	
-	self:calculateWalkableMatrix()
-end
-
---
---  Returns a table with the ids for the bucket cells
---	that are currently visible
---
-function Map:visibleIds(id_table)
-	local ids = id_table
-	for k, v in pairs(ids) do
-		ids[k] = nil
-	end
-	
-	for _, cell in pairs(self._cellsInMemory) do
-		if cell._visible then
-			for id, _ in pairs(cell._bucketIds) do
-				ids[id] = true
-			end
-		end
-	end
-end
-
---
---  Converts a position to a tile coordinate
---
-function Map:posToTile(x, y)
-	local ts = self._tileSet:size()
-	return math.floor(x / ts[1]), math.floor(y / ts[2])
 end
