@@ -167,6 +167,11 @@ function Map:update(dt, camera, profiler)
 	--profiler:profile('receiving loaded map cells', function()
 			self:receiveLoadedCells()
 		--end) -- profile
+		
+	-- cancel the loading of any map cells that no longer need to be loaded
+	--profiler:profile('cancelling non needed map cells', function()
+			self:cancelLoadingCells()
+		--end) -- profile		
 end
 
 --
@@ -229,6 +234,20 @@ function Map:visibleCells()
 				cells[#cells+1] = false				
 			end
 		end		
+	end
+end
+
+--
+--  Cancels any loading cells
+--
+function Map:cancelLoadingCells()
+	-- cancel any cells that don't need to be loaded
+	local shouldBeVisible = self._cellsShouldBeVisible
+	local loading = self._cellsLoading	
+	for k, v in pairs(loading) do
+		if not shouldBeVisible[k] then
+			loading[k] = nil
+		end
 	end
 end
 
@@ -337,11 +356,11 @@ function Map:receiveLoadedCells()
 			local area = self._communicator:demand('loadedMapCell')
 			local actors = self._communicator:demand('loadedMapCell')	
 			self._cellsLoading[hash] = nil
-		
+			received = true	
+			
 			if self._cellsShouldBeVisible[hash] then
 			
-				--profiler:profile('creating map cells', function()
-					received = true			
+				--profiler:profile('creating map cells', function()					
 					cellLoaded = true
 					local x, y = Map.unhash(hash)			
 					local mc = MapCell{ self._tileSet, 

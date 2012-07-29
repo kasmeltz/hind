@@ -23,6 +23,8 @@ function ThreadCommunicator:send(command, msg)
 	self._thread:set(command .. commandCount, msg)	
 	commandCount = commandCount + 1
 	ThreadCommunicator.sent[command] = commandCount	
+	
+	return commandCount
 end
 
 --
@@ -35,7 +37,7 @@ function ThreadCommunicator:receive(command)
 		commandCount = commandCount + 1
 		ThreadCommunicator.received[command] = commandCount	
 	end
-	return msg
+	return msg, commandCount - 1
 end
 
 --
@@ -48,5 +50,12 @@ function ThreadCommunicator:demand(command)
 		commandCount = commandCount + 1
 		ThreadCommunicator.received[command] = commandCount	
 	end
-	return msg
+	return msg, commandCount - 1
+end
+
+--
+--  Peek at the specified message number
+--
+function ThreadCommunicator:peek(command, number)
+	return self._thread:peek(command .. number)	
 end
