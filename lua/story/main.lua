@@ -14,9 +14,11 @@ require 'log'
 require 'table_ext'
 require 'point'
 
+-- @TODO put this all into a map generator class
+-- @todo make these adjustable?
 local NUM_LLOYD_ITERATIONS = 2
-
--- @todo make this adjustable?
+local NUM_POINTS = 2000
+local LAKE_THRESHOLD = 0.3
 local SIZE = 1
 local seed = os.time()
 
@@ -72,15 +74,17 @@ end
 --
 --  Returns true if the 
 --
-local pa, pb, pc = 0.55, 7, 1.5
+local pa, pb, pc = 0.8, 7, 1.7
 local perlin = perlin2D(seed, 256, 256, pa, pb, pc)
 function islandShape(p)
-	local x = math.floor(p.x + 1 * 128) + 1
-	local y = math.floor(p.y + 1 * 128) + 1	
-	y = math.max(x,256)
-	y = math.max(x,256)
+	local x = math.floor((p.x + 1) * 128)
+	local y = math.floor((p.y + 1) * 128)
+	x = math.min(x,256)	
+	y = math.min(y,256)
+	x = math.max(x,1)	
+	y = math.max(y,1)
 	
-	local c = (128 + 40 * perlin[y][x]) / 255
+	local c = (128 + 40 * perlin[y][x]) / 255	
     return c > (0.3 + 0.3 * p:norm() * p:norm())
 end
 	
@@ -140,6 +144,83 @@ function assignCornerElevations(corners)
 	end
 end
 
+ --
+ --	Determine polygon and corner types: ocean, coast, land.
+ --
+function assignOceanCoastAndLand(corners, centers)
+	-- Compute polygon attributes 'ocean' and 'water' based on the
+	-- corner attributes. Count the water corners per
+	-- polygon. Oceans are all polygons connected to the edge of the
+	-- map. In the first pass, mark the edges of the map as ocean;
+	-- in the second pass, mark any water-containing polygon
+	-- connected an ocean as ocean.
+	local queue = double_queue:new()
+
+	local numWater
+	for _, p in pairs(centers) do
+		numWater = 0
+		for q, _ in pairs(p._corners) do
+			if q._border then
+				p._border = true
+				p._ocean = true
+				q._water = true
+				queue:pushright(p)
+			end
+			if q._water then
+				numWater = numWater + 1
+			end
+		end
+		p._water = p._ocean or numWater >= table.count(p._corners) * LAKE_THRESHOLD
+	end
+	
+	while queue:count() > 0 do
+		local p = queue:popleft()
+		for r, _ in pairs(p._neighbors) do
+			if r._water and not r._ocean then
+				r._ocean = true
+				queue:pushright(r)
+			end
+		end
+	end
+
+	-- Set the polygon attribute 'coast' based on its neighbors. If
+	-- it has at least one ocean and at least one land neighbor,
+	-- then this is a coastal polygon.
+	for _, p in pairs(centers) do
+		local numOcean = 0		  
+        local numLand = 0
+        for r, _ in pairs(p._neighbors) do
+			if r._ocean then
+				numOcean = numOcean + 1
+			end
+			if not r._water then
+				numLand = numLand + 1
+			end
+		end
+		p._coast = numOcean > 0 and numLand > 0
+	end
+	
+	-- Set the corner attributes based on the computed polygon
+	-- attributes. If all polygons connected to this corner are
+	-- ocean, then it's ocean; if all are land, then it's land;
+	-- otherwise it's coast.
+	for _, q in pairs(corners) do
+		local numOcean = 0
+		local numLand = 0
+		for p, _ in pairs(q._touches) do
+			if p._ocean then
+				numOcean = numOcean + 1
+			end
+			if not p._water then
+				numLand = numLand + 1
+			end
+		end		
+		q._ocean = numOcean == table.count(q._touches)
+		q._coast = numOcean > 0 and numLand > 0
+		q._water = q._border or (numLand ~= table.count(q._touches) and not q._coast)
+	end
+end
+
 function plot2D(values)
   for r = 1, #values do
     for c = 1, #(values[1]) do
@@ -149,16 +230,22 @@ function plot2D(values)
   end
 end
 
-function love.load()	
-	points = vd.generatePoints{ count = 1000, seed = seed }	
-	points = improveRandomPoints(points)
-	corners, edges, centers, adjacencies = vd.voronoi(points)
+function buildMap()
+	local points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
+	local points = improveRandomPoints(points)
+	local corners, edges, centers, adjacencies = vd.voronoi(points)
 	
 	gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
-	vdgraph.improveCorners(gCorners, gEdges)
+	vdgraph.improveCorners(gCorners, gEdges)	
 	assignCornerElevations(gCorners)
+	assignOceanCoastAndLand(gCorners, gCenters)
 end
 
+function love.load()	
+	buildMap()
+end
+
+local showPerlin = 0
 function love.draw()
 	local sw, sh = love.graphics.getMode()	
 	love.graphics.setBackgroundColor(128,128,128)
@@ -185,9 +272,16 @@ function love.draw()
 		local y = c._point.y		
 		x = x * sw
 		y = y * sh
+		
+		if c._ocean then		
+			love.graphics.setColor(0,0,255,255)
+		elseif c._coast then
+			love.graphics.setColor(255,255,0,255)
+		else
+			love.graphics.setColor(0,255,0,255)
+		end
 		love.graphics.circle( 'fill', x, y, 2)
 	end		
-	
 	
 	for k, c in pairs(gCorners) do
 		local x = c._point.x
@@ -195,33 +289,35 @@ function love.draw()
 		x = x * sw
 		y = y * sh
 		
-		--[[
-		if c._water then		
+		if c._ocean then		
 			love.graphics.setColor(0,0,255,255)
+		elseif c._coast then
+			love.graphics.setColor(255,255,0,255)
 		else
 			love.graphics.setColor(0,255,0,255)
 		end
-		]]
-		love.graphics.setColor(c._elevation * 20,0,0,255)
 		love.graphics.circle( 'fill', x, y, 2)
-	end		
+	end	
 	
-	love.graphics.setColor(255,255,255,255)
+	if showPerlin == 1 then
+		plot2D(perlin)
+	end
+	
+	love.graphics.setColor(0,255,255,255)
 	love.graphics.print(pa, 0,0)
 	love.graphics.print(pb, 0,20)
-	love.graphics.print(pc, 0,40)
-	--plot2D(perlin)
+	love.graphics.print(pc, 0,40)	
 end
 
 function love.update(dt)
 
 	local updatePerlin = false
 	if love.keyboard.isDown('up') then
-		pa = pa + 0.01
+		pa = pa + 0.1
 		updatePerlin = true
 	end
 	if love.keyboard.isDown('down') then
-		pa = pa - 0.01
+		pa = pa - 0.1
 		updatePerlin = true
 	end
 	if love.keyboard.isDown('right') then
@@ -233,16 +329,25 @@ function love.update(dt)
 		updatePerlin = true
 	end	
 	if love.keyboard.isDown('a') then
-		pc = pc - 0.01
+		pc = pc - 0.1
 		updatePerlin = true
 	end
 	if love.keyboard.isDown('z') then
-		pc = pc + 0.01
+		pc = pc + 0.1
 		updatePerlin = true
 	end	
-
+	
 	if updatePerlin then
 		perlin = perlin2D(seed, 256, 256, pa, pb, pc)
-		assignCornerElevations(gCorners)
 	end
+end
+
+function love.keyreleased(key)
+	if key == 'w' then
+		showPerlin = 1 - showPerlin
+	end
+
+	if key == 'm' then
+		buildMap()
+	end	
 end
