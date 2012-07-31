@@ -82,7 +82,6 @@ function voronoi(points, params)
 	
 	local corners = { x = {}, y = {} }
 	local edges = { c1 = {}, c2 = {} }
-	local regions = { }
 	
 	local lines = output:split('\n')
 	
@@ -122,28 +121,8 @@ function voronoi(points, params)
 		edges.c2[#edges.c2 + 1] = tonumber(connections[2]) + 1
 		
 		points[#points + 1] = tonumber(connections[#connections]) + 1
-		
-		regions[#regions + 1] = points
 	end
 	
-	local file = assert(io.popen('qhull\\qvoronoi ' .. qvoronoi_params .. ' Pp i'))
-	local output = file:read('*all')
-	file:close()
-	
-	local delaunay  = { p1 = {}, p2 = {} }
-	
-	local lines = output:split('\n')
-	
-	for i = 2, #lines - 1 do
-		local points = lines[i]:split(' ')
-		delaunay.p1[#delaunay.p1 + 1] = tonumber(points[1]) + 1
-		delaunay.p2[#delaunay.p2 + 1] = tonumber(points[2]) + 1
-		delaunay.p1[#delaunay.p1 + 1] = tonumber(points[2]) + 1
-		delaunay.p2[#delaunay.p2 + 1] = tonumber(points[3]) + 1
-		delaunay.p1[#delaunay.p1 + 1] = tonumber(points[3]) + 1
-		delaunay.p2[#delaunay.p2 + 1] = tonumber(points[1]) + 1
-	end	
-
 	local centers = {}
 	
 	local file = assert(io.popen('qhull\\qvoronoi ' .. qvoronoi_params .. ' Fv'))
@@ -180,6 +159,6 @@ function voronoi(points, params)
 		center[vx2] = true
 		centers[is2] = center		
 	end	
-	
-	return corners, edges, regions, centers, adjacencies, delaunay
+
+	return corners, edges, centers, adjacencies
 end

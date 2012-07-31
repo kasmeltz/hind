@@ -39,7 +39,7 @@ function improveRandomPoints(points)
 	]]
 	for i = 1, NUM_LLOYD_ITERATIONS do
 		-- generate voronoi values for the current points
-		local corners, _, _, centers, _, _ = vd.voronoi(points)
+		local corners, _, centers = vd.voronoi(points)
 		
 		-- start with a whole new table of points
 		for k, v in pairs(points.x) do
@@ -152,7 +152,7 @@ end
 function love.load()	
 	points = vd.generatePoints{ count = 1000, seed = seed }	
 	points = improveRandomPoints(points)
-	corners, edges, regions, centers, adjacencies, delaunay = vd.voronoi(points)
+	corners, edges, centers, adjacencies = vd.voronoi(points)
 	
 	gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
 	vdgraph.improveCorners(gCorners, gEdges)
