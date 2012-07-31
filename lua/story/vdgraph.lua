@@ -109,6 +109,7 @@ function buildGraph(po, co, aj)
 		end
 		
 		local c = objects.Corner{ #corners + 1, p }
+		c._river = 0
 		corners[#corners + 1] = c
 
 		table.insert(cornerBuckets[p.x], c)
@@ -123,7 +124,7 @@ function buildGraph(po, co, aj)
 		local p2 = objects.Point{po.x[a.p2], po.y[a.p2]}
 		
 		local e = objects.Edge{ #edges + 1 }
-		e._river = false
+		e._river = 0
 		e._midpoint = objects.Point.mid(c1, c2)
 		
 		e._v1 = makeCorner(c1)
@@ -133,10 +134,10 @@ function buildGraph(po, co, aj)
 		
 		edges[#edges + 1] = e	
 		
-		if e._d1 then table.insert(e._d1._borders, e) end
-		if e._d2 then table.insert(e._d2._borders, e) end
-		if e._v1 then table.insert(e._v1._protrudes, e) end
-		if e._v2 then table.insert(e._v2._protrudes, e) end
+		if e._d1 then e._d1._borders[e] = true end
+		if e._d2 then e._d2._borders[e] = true end
+		if e._v1 then e._v1._protrudes[e] = true end
+		if e._v2 then e._v2._protrudes[e] = true end
 		
 		if e._d1 and e._d2 then 
 			e._d1._neighbors[e._d2] = true

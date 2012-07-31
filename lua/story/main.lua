@@ -20,7 +20,11 @@ local NUM_LLOYD_ITERATIONS = 2
 local NUM_POINTS = 2000
 local LAKE_THRESHOLD = 0.3
 local SIZE = 1
+local NUM_RIVERS = 500
 local seed = os.time()
+
+local bigFont = love.graphics.newFont(48)
+local smallFont = love.graphics.newFont(12)
 
 --
 --  Improve the random set of points with Lloyd Relaxation.
@@ -221,6 +225,356 @@ function assignOceanCoastAndLand(corners, centers)
 	end
 end
 
+--
+--	Create an array of corners that are on land only, for use by
+--  algorithms that work only on land.  
+--
+function landCorners(corners)
+	local locations = {}
+	for _, c in pairs(corners) do
+		if not c._ocean and not c._coast then
+			locations[#locations+1] = c
+		end
+	end      
+	return locations
+end
+
+--
+-- 	Change the overall distribution of elevations so that lower
+--	elevations are more common than higher
+--	elevations. Specifically, we want elevation X to have frequency
+--	(1-X).  To do this we will sort the corners, then set each
+-- 	corner to its desired elevation.
+function redistributeElevations(locations)
+      -- SCALE_FACTOR increases the mountain area. At 1.0 the maximum
+      -- elevation barely shows up on the map, so we set it to 1.1
+      local SCALE_FACTOR = 1.1
+
+      table.sort(locations, function(a,b) return a._elevation < b._elevation end)
+	  
+      for i = 1, #locations do
+        -- Let y(x) be the total area that we want at elevation <= x.
+        -- We want the higher elevations to occur less than lower
+        -- ones, and set the area to be y(x) = 1 - (1-x)^2.
+        local y = i / #locations
+        -- Now we have to solve for x, given the known y.
+        --  *  y = 1 - (1-x)^2
+        --  *  y = 1 - (1 - 2x + x^2)
+        --  *  y = 2x - x^2
+        --  *  x^2 - 2x + y = 0
+        -- From this we can use the quadratic equation to get:
+        local x = math.sqrt(SCALE_FACTOR) - math.sqrt(SCALE_FACTOR*(1-y))
+        if x > 1.0 then 
+			x = 1.0
+		end
+        locations[i]._elevation = x
+      end
+end
+
+--
+--	Polygon elevations are the average of the elevations of their corners.
+--
+function assignPolygonElevations(centers)
+	for _, p in pairs(centers) do
+		local sumElevation = 0.0
+        for q, _ in pairs(p._corners) do
+			sumElevation = sumElevation + q._elevation
+		end
+		p._elevation = sumElevation / table.count(p._corners)
+   end
+end 
+
+--
+--  Calculate downslope pointers.  At every point, we point to the
+-- 	point downstream from it, or to itself.  This is used for
+--	generating rivers and watersheds.
+--
+function calculateDownslopes(corners)
+	local r
+	for _, q in pairs(corners) do
+		r = q
+		for s, _ in pairs(q._adjacent) do
+			if s._elevation <= r._elevation then
+				r = s
+			end
+		end
+		q._downslope = r
+	end
+end
+	
+--	Calculate the watershed of every land point. The watershed is
+--	the last downstream land point in the downslope graph. TODO:
+--	watersheds are currently calculated on corners, but it'd be
+--	more useful to compute them on polygon centers so that every
+--	polygon can be marked as being in one watershed.
+ function calculateWatersheds(corners)
+	-- Initially the watershed pointer points downslope one step.      
+	for _, q in pairs(corners) do
+		q._watershed = q
+		if not q._ocean and not q._coast then		  
+            q._watershed = q._downslope
+		end
+	end
+	
+	-- Follow the downslope pointers to the coast. Limit to 100
+	-- iterations although most of the time with NUM_POINTS=2000 it
+	-- only takes 20 iterations because most points are not far from
+	-- a coast.  TODO: can run faster by looking at
+	-- p.watershed.watershed instead of p.downslope.watershed.
+	for i = 1, 100 do
+		local changed = false
+		for _, q in pairs(corners) do
+			if not q._ocean and not q._coast and not q._watershed._coast then
+				local r = q._downslope._watershed
+				if not r._ocean then
+					q._watershed = r
+				end
+				changed = true
+			end
+		end
+		if not changed then break end
+	end
+	
+	-- How big is each watershed?
+	for _, q in pairs(corners) do
+		local r = q._watershed
+		r._watershed_size = 1 + (r._watershed_size or 0)
+	end
+end
+
+function lookupEdgeFromCorner(q, s)
+	for edge, _ in pairs(q._protrudes) do
+		if edge._v1 == s or edge._v2 == s then
+			return edge		
+		end
+	end
+	return nil
+end
+	
+--
+--  Create rivers along edges. Pick a random corner point, then
+--	move downslope. Mark the edges and corners as rivers.
+--
+function createRivers(corners)      
+	-- @TODO how does this number affect things?
+	for i = 1, NUM_RIVERS do
+		local cn = math.floor(math.random() * #corners) + 1
+		local q = corners[cn]
+		if not q._ocean and q._elevation >= 0.3 and q._elevation <= 0.9 then
+			-- Bias rivers to go west: if q._downslope._point.x <= q._point.x then
+			while not q._coast do
+				if q == q._downslope then
+					break
+				end
+				local edge = lookupEdgeFromCorner(q, q._downslope)
+				edge._river = edge._river + 1
+				q._river = (q._river or 0) + 1
+				q._downslope._river = (q._downslope._river or 0) + 1 -- @TODO: fix double count
+				q = q._downslope
+			end
+		end
+	end
+end
+
+--
+--	Calculate moisture. Freshwater sources spread moisture: rivers
+--	and lakes (not oceans). Saltwater sources have moisture but do
+--	not spread it (we set it at the end, after propagation).
+--
+function assignCornerMoisture(corners)
+	local queue = double_queue:new()
+      
+	-- Fresh water
+	for _, q in pairs(corners) do
+		if q._water or q._river > 0 and not q._ocean then
+			if q._river > 0 then
+				q._moisture = math.min(3.0, (0.2 * q._river))
+			else
+				q._moisture = 1.0
+			end
+			queue:pushright(q)
+		else
+			q._moisture = 0.0
+		end		
+	end
+		
+	while queue:count() > 0 do
+		local q = queue:popleft()
+		for r, _ in pairs(q._adjacent) do
+			local newMoisture = q._moisture * 0.9
+			if newMoisture > r._moisture then
+				r._moisture = newMoisture
+				queue:pushright(r)
+			end
+		end
+	end
+	  
+	-- Salt water
+	for _, q in pairs(corners) do
+		if q._ocean or q._coast then
+			q._moisture = 1.0
+        end
+	end
+end
+
+--
+-- Change the overall distribution of moisture to be evenly distributed.
+--
+function redistributeMoisture(locations)
+	table.sort(locations, function(a,b) return a._moisture < b._moisture end)
+	for i = 1, #locations do
+        locations[i]._moisture = i / #locations
+    end
+end
+
+--
+--	Polygon moisture is the average of the moisture at corners
+--
+function assignPolygonMoisture(centers)
+	for _, p in pairs(centers) do
+		local sumMoisture = 0.0
+		for q, _ in pairs(p._corners) do
+			if q._moisture > 1.0 then 
+				q._moisture = 1.0
+			end
+			sumMoisture = sumMoisture + q._moisture
+		end
+		p._moisture = sumMoisture / table.count(p._corners)
+	end
+end
+	
+--
+--  Assign a biome type to each polygon. If it has
+--  ocean/coast/water, then that's the biome; otherwise it depends
+--  on low/high elevation and low/medium/high moisture. This is
+--  roughly based on the Whittaker diagram but adapted to fit the
+--  needs of the island map generator.
+--
+--  @TODO If this were a continent generator, latitude might be a 
+--	contributor to temperature. Also, wind, evaporation, and rain 
+--	shadows might be useful for transporting moisture as humidity. 
+--	However, for this generator we keep it simple. 
+--
+function getBiome(p)
+	if p._ocean then return 'OCEAN'
+	elseif p._water then
+		if p._elevation < 0.1 then 
+			return 'MARSH'
+		elseif p._elevation > 0.8 then 
+			return 'ICE'
+		else 
+			return 'LAKE'
+		end
+	elseif p._coast then
+		return 'BEACH'
+	elseif p._elevation > 0.8 then
+		if p._moisture > 0.50 then 
+			return 'SNOW'
+		elseif p._moisture > 0.33 then 
+			return 'TUNDRA'
+		elseif p._moisture > 0.16 then 
+			return 'BARE'
+		else 
+			return 'SCORCHED'
+		end
+	elseif p._elevation > 0.6 then
+		if p._moisture > 0.66 then 
+			return 'TAIGA'
+		elseif p._moisture > 0.33 then 
+			return 'SHRUBLAND'
+		else 
+			return 'TEMPERATE_DESERT'
+		end
+	elseif p._elevation > 0.3 then
+		if p._moisture > 0.83 then 
+			return 'TEMPERATE_RAIN_FOREST'			
+		elseif p._moisture > 0.50 then 
+			return 'TEMPERATE_DECIDUOUS_FOREST'
+		elseif p._moisture > 0.16 then 
+			return 'GRASSLAND'
+		else 
+			return 'TEMPERATE_DESERT'
+		end
+	else 
+		if p._moisture > 0.66 then 
+			return 'TROPICAL_RAIN_FOREST'
+		elseif p._moisture > 0.33 then 
+			return 'TROPICAL_SEASONAL_FOREST'
+		elseif p._moisture > 0.16 then 
+			return 'GRASSLAND'
+		else 
+			return 'SUBTROPICAL_DESERT'
+		end			
+	end
+end
+	
+function assignBiomes(centers)
+	for _, p in pairs(centers) do	
+		p._biome = getBiome(p)
+	end
+end
+	
+function buildMap()
+	local points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
+	local points = improveRandomPoints(points)
+	local corners, edges, centers, adjacencies = vd.voronoi(points)
+	
+	gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
+	vdgraph.improveCorners(gCorners, gEdges)	
+	
+	-- Determine the elevations and water at Voronoi corners
+	assignCornerElevations(gCorners)
+
+	-- Determine polygon and corner type: ocean, coast, land.
+	assignOceanCoastAndLand(gCorners, gCenters)
+
+    -- Rescale elevations so that the highest is 1.0, and they're
+	-- distributed well. We want lower elevations to be more common
+	-- than higher elevations, in proportions approximately matching
+	-- concentric rings. That is, the lowest elevation is the
+	-- largest ring around the island, and therefore should more
+	-- land area than the highest elevation, which is the very
+	-- center of a perfectly circular island.
+	redistributeElevations(landCorners(gCorners))
+	
+	 -- Assign elevations to non-land corners
+	for _, q in pairs(gCorners) do
+		if q._ocean or q._coast then
+			q._elevation = 0.0
+		end                
+	end
+	
+	-- Polygon elevations are the average of their corners
+	assignPolygonElevations(gCenters)
+	
+	-- Determine downslope paths.
+	calculateDownslopes(gCorners)
+	
+	-- Determine watersheds: for every corner, where does it flow
+    -- out into the ocean? 
+	calculateWatersheds(gCorners)
+	
+	-- Create rivers
+	createRivers(gCorners)
+	
+	-- Determine moisture at corners, starting at rivers
+	-- and lakes, but not oceans. Then redistribute
+	-- moisture to cover the entire range evenly from 0.0
+	-- to 1.0. Then assign polygon moisture as the average
+	-- of the corner moisture
+	assignCornerMoisture(gCorners)
+	redistributeMoisture(landCorners(gCorners))
+	assignPolygonMoisture(gCenters)
+	
+	-- assign biomes
+	assignBiomes(gCenters)
+end
+
+function love.load()	
+	buildMap()
+end
+
+local showPerlin = 0
 function plot2D(values)
   for r = 1, #values do
     for c = 1, #(values[1]) do
@@ -230,30 +584,60 @@ function plot2D(values)
   end
 end
 
-function buildMap()
-	local points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
-	local points = improveRandomPoints(points)
-	local corners, edges, centers, adjacencies = vd.voronoi(points)
-	
-	gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
-	vdgraph.improveCorners(gCorners, gEdges)	
-	assignCornerElevations(gCorners)
-	assignOceanCoastAndLand(gCorners, gCenters)
+local drawMode = 'biomes'
+
+function drawBiomes()
+	local sw, sh = love.graphics.getMode()	
+	love.graphics.setBackgroundColor(128,128,128)
+	love.graphics.clear()
+
+	for _, ce in pairs(gCenters) do
+		if ce._biome == 'OCEAN' then
+			
+		end		
+		
+		for ed, _ in pairs(ce._borders) do
+			if ed._v1 and ed._v2 then
+				local x1 = ed._v1._point.x
+				local y1 = ed._v1._point.y
+				local x2 = ed._v2._point.x
+				local y2 = ed._v2._point.y
+				x1 = x1 * sw
+				y1 = y1 * sh
+				x2 = x2 * sw
+				y2 = y2 * sh
+				love.graphics.line(x1,y1,x2,y2)					
+			end
+		end
+	end
 end
 
-function love.load()	
-	buildMap()
-end
-
-local showPerlin = 0
-function love.draw()
+function drawElevation()
 	local sw, sh = love.graphics.getMode()	
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 	
 	love.graphics.setColor(0,0,0,255)
 	for k, e in pairs(gEdges) do
-		if e._v1 and e._v2 then
+		if e._v1 and e._v2 then		
+			local elev = ((e._v1._elevation) + (e._v2._elevation)) / 2			
+			local r, g, b = 0, 255, 0
+		
+			if e._river > 0 then
+				r = 0 g = 0 b = 255
+				elev = 1
+			end
+			if (e._v1 and e._v1._ocean) or (e._v2 and e._v2._ocean) then
+				r = 0 g = 0 b = 255
+				elev = 1
+			end
+			if (e._v1 and e._v1._coast) and (e._v2 and e._v2._coast) then
+				r = 255 g = 255 b = 0
+				elev = 1
+			end
+			
+			love.graphics.setColor(r * elev, g * elev, b * elev, 255)
+		
 			local x1 = e._v1._point.x
 			local y1 = e._v1._point.y
 			local x2 = e._v2._point.x
@@ -273,13 +657,16 @@ function love.draw()
 		x = x * sw
 		y = y * sh
 		
+		local r, g, b 
+		local elev = c._elevation
 		if c._ocean then		
-			love.graphics.setColor(0,0,255,255)
+			r = 0 g = 0 b = 255
 		elseif c._coast then
-			love.graphics.setColor(255,255,0,255)
+			r = 255 g = 255 b = 0
 		else
-			love.graphics.setColor(0,255,0,255)
-		end
+			r = 0 g = 255 b = 0
+		end		
+		love.graphics.setColor(r * elev,g * elev,b * elev,255)
 		love.graphics.circle( 'fill', x, y, 2)
 	end		
 	
@@ -289,24 +676,119 @@ function love.draw()
 		x = x * sw
 		y = y * sh
 		
+		local r, g, b 
+		local elev = c._elevation
 		if c._ocean then		
-			love.graphics.setColor(0,0,255,255)
+			r = 0 g = 0 b = 255
 		elseif c._coast then
-			love.graphics.setColor(255,255,0,255)
+			r = 255 g = 255 b = 0
 		else
-			love.graphics.setColor(0,255,0,255)
-		end
+			r = 0 g = 255 b = 0
+		end		
+		love.graphics.setColor(r * elev,g * elev,b * elev,255)
 		love.graphics.circle( 'fill', x, y, 2)
 	end	
+end
+
+function drawMoisture()
+	local sw, sh = love.graphics.getMode()	
+	love.graphics.setBackgroundColor(128,128,128)
+	love.graphics.clear()
 	
-	if showPerlin == 1 then
-		plot2D(perlin)
+	love.graphics.setColor(0,0,0,255)
+	for k, e in pairs(gEdges) do
+		if e._v1 and e._v2 then		
+			local elev = ((e._v1._moisture) + (e._v2._moisture)) / 2			
+			local r, g, b = 0, 255, 0
+		
+			if e._river > 0 then
+				r = 0 g = 0 b = 255
+			end
+			if (e._v1 and e._v1._ocean) or (e._v2 and e._v2._ocean) then
+				r = 0 g = 0 b = 255
+			end
+			if (e._v1 and e._v1._coast) and (e._v2 and e._v2._coast) then
+				r = 255 g = 255 b = 0
+			end
+			
+			love.graphics.setColor(r * elev, g * elev, b * elev, 255)
+		
+			local x1 = e._v1._point.x
+			local y1 = e._v1._point.y
+			local x2 = e._v2._point.x
+			local y2 = e._v2._point.y
+
+			x1 = x1 * sw
+			y1 = y1 * sh
+			x2 = x2 * sw
+			y2 = y2 * sh
+			love.graphics.line(x1,y1,x2,y2)					
+		end			
 	end
 	
-	love.graphics.setColor(0,255,255,255)
-	love.graphics.print(pa, 0,0)
-	love.graphics.print(pb, 0,20)
-	love.graphics.print(pc, 0,40)	
+	for k, c in pairs(gCenters) do
+		local x = c._point.x
+		local y = c._point.y		
+		x = x * sw
+		y = y * sh
+		
+		local r, g, b 
+		local elev = c._moisture
+		if c._ocean then		
+			r = 0 g = 0 b = 255
+		elseif c._coast then
+			r = 255 g = 255 b = 0
+		else
+			r = 0 g = 255 b = 0
+		end		
+		love.graphics.setColor(r * elev,g * elev,b * elev,255)
+		love.graphics.circle( 'fill', x, y, 2)
+	end		
+	
+	for k, c in pairs(gCorners) do
+		local x = c._point.x
+		local y = c._point.y		
+		x = x * sw
+		y = y * sh
+		
+		local r, g, b 
+		local elev = c._moisture
+		if c._ocean then		
+			r = 0 g = 0 b = 255
+		elseif c._coast then
+			r = 255 g = 255 b = 0
+		else
+			r = 0 g = 255 b = 0
+		end		
+		love.graphics.setColor(r * elev,g * elev,b * elev,255)
+		love.graphics.circle( 'fill', x, y, 2)
+	end	
+end
+
+
+function love.draw()
+	if showPerlin == 1 then 
+		plot2D(perlin)
+		return
+	end
+	
+	if drawMode == 'biomes' then
+		drawBiomes()
+	elseif drawMode == 'elevation' then
+		drawElevation()
+	elseif drawMode == 'moisture' then
+		drawMoisture()
+	end
+	
+	love.graphics.setColor(255,255,255,255)
+	
+	love.graphics.setFont(bigFont)
+	love.graphics.print(drawMode, 10, 10)
+	
+	love.graphics.setFont(smallFont)	
+	love.graphics.print(pa, 10,90)
+	love.graphics.print(pb, 10,110)
+	love.graphics.print(pc, 10,130)	
 end
 
 function love.update(dt)
@@ -350,4 +832,15 @@ function love.keyreleased(key)
 	if key == 'm' then
 		buildMap()
 	end	
+	
+	if key == '1' then
+		drawMode = 'biomes'
+	end
+	if key == '2' then
+		drawMode = 'elevation'
+	end
+	if key == '3' then
+		drawMode = 'moisture'
+	end
+	
 end
