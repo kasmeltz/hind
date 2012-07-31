@@ -37,11 +37,6 @@ function love.load()
 	
 	largeFont = love.graphics.newFont(24)
 	smallFont = love.graphics.newFont(12)
-	
-	screenWidth = 1200
-	screenHeight = 675
-	local success = love.graphics.setMode( 
-		screenWidth,screenHeight, false, false, 0 )		
 
 	soundEffects = {}
 	
