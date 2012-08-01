@@ -18,7 +18,7 @@ require 'point'
 -- @TODO put this all into a map generator class
 -- @todo make these adjustable?
 local NUM_LLOYD_ITERATIONS = 2
-local NUM_POINTS = 10000
+local NUM_POINTS = 6000
 local LAKE_THRESHOLD = 0.3
 local SIZE = 1
 local NUM_RIVERS = 1000
@@ -105,7 +105,7 @@ end
 -- Determine whether a given point should be on the island or in the water.
 --
 function inside(p)
-	return islandShape(objects.Point{2*(p.x / SIZE - 0.5), 2*(p.y / SIZE - 0.5)})
+	return islandShape(point:new(2*(p.x / SIZE - 0.5), 2*(p.y / SIZE - 0.5)))
 end
 	
 --
@@ -139,7 +139,7 @@ function assignCornerElevations(corners)
 	-- going downhill (no local minima)
 	while q:count() > 0 do
 		local c = q:popleft()	
-		for s, _ in pairs(c._adjacent) do
+		for _, s in pairs(c._adjacent) do
 			-- Every step up is epsilon over water or 1 over land. The
 			-- number doesn't matter because we'll rescale the
 			-- elevations later.
@@ -172,7 +172,7 @@ function assignOceanCoastAndLand(corners, centers)
 	local numWater
 	for _, p in pairs(centers) do
 		numWater = 0
-		for q, _ in pairs(p._corners) do
+		for _, q in pairs(p._corners) do
 			if q._border then
 				p._border = true
 				p._ocean = true
@@ -188,7 +188,7 @@ function assignOceanCoastAndLand(corners, centers)
 	
 	while queue:count() > 0 do
 		local p = queue:popleft()
-		for r, _ in pairs(p._neighbors) do
+		for _, r in pairs(p._neighbors) do
 			if r._water and not r._ocean then
 				r._ocean = true
 				queue:pushright(r)
@@ -202,7 +202,7 @@ function assignOceanCoastAndLand(corners, centers)
 	for _, p in pairs(centers) do
 		local numOcean = 0		  
         local numLand = 0
-        for r, _ in pairs(p._neighbors) do
+        for _, r in pairs(p._neighbors) do
 			if r._ocean then
 				numOcean = numOcean + 1
 			end
@@ -220,7 +220,7 @@ function assignOceanCoastAndLand(corners, centers)
 	for _, q in pairs(corners) do
 		local numOcean = 0
 		local numLand = 0
-		for p, _ in pairs(q._touches) do
+		for _, p in pairs(q._touches) do
 			if p._ocean then
 				numOcean = numOcean + 1
 			end
@@ -286,7 +286,7 @@ end
 function assignPolygonElevations(centers)
 	for _, p in pairs(centers) do
 		local sumElevation = 0.0
-        for q, _ in pairs(p._corners) do
+        for _, q in pairs(p._corners) do
 			sumElevation = sumElevation + q._elevation
 		end
 		p._elevation = sumElevation / table.count(p._corners)
@@ -302,7 +302,7 @@ function calculateDownslopes(corners)
 	local r
 	for _, q in pairs(corners) do
 		r = q
-		for s, _ in pairs(q._adjacent) do
+		for _, s in pairs(q._adjacent) do
 			if s._elevation <= r._elevation then
 				r = s
 			end
@@ -352,7 +352,7 @@ end
 end
 
 function lookupEdgeFromCorner(q, s)
-	for edge, _ in pairs(q._protrudes) do
+	for _, edge in pairs(q._protrudes) do
 		if edge._v1 == s or edge._v2 == s then
 			return edge		
 		end
@@ -409,7 +409,7 @@ function assignCornerMoisture(corners)
 		
 	while queue:count() > 0 do
 		local q = queue:popleft()
-		for r, _ in pairs(q._adjacent) do
+		for _, r in pairs(q._adjacent) do
 			local newMoisture = q._moisture * 0.9
 			if newMoisture > r._moisture then
 				r._moisture = newMoisture
@@ -442,7 +442,7 @@ end
 function assignPolygonMoisture(centers)
 	for _, p in pairs(centers) do
 		local sumMoisture = 0.0
-		for q, _ in pairs(p._corners) do
+		for _, q in pairs(p._corners) do
 			if q._moisture > 1.0 then 
 				q._moisture = 1.0
 			end
@@ -538,7 +538,7 @@ function assignTerritories(centers)
 	-- assign initial territories
 	local function isEmpty(q)
 		if q._territory then return false end
-		for r, _ in pairs(q._neighbors) do
+		for _, r in pairs(q._neighbors) do
 			if r._territory then return false end
 		end
 		return true
@@ -561,7 +561,7 @@ function assignTerritories(centers)
 		local q = queue:popleft()
 		-- attempt to occupy all neighbouring squares
 		if table.count(q._neighbors) > 0 then			
-			for n, _ in pairs(q._neighbors) do
+			for _, n in pairs(q._neighbors) do
 				if not n._ocean then
 					if not n._territory then
 						n._territory = q._territory
@@ -593,21 +593,21 @@ function buildNoisyLineSegments(A, B, C, D, minLength)
         local q = math.random() * 0.6 + 0.2
 
         -- Midpoints
-        local E = objects.Point.interpolate(A,D,p)
-		local F = objects.Point.interpolate(B,C,p)
-		local G = objects.Point.interpolate(A,B,q)
-		local I = objects.Point.interpolate(D,C,q)
+        local E = point.interpolate(A,D,p)
+		local F = point.interpolate(B,C,p)
+		local G = point.interpolate(A,B,q)
+		local I = point.interpolate(D,C,q)
         
         -- Central point
-        local H = objects.Point.interpolate(E,F,q)
+        local H = point.interpolate(E,F,q)
         
         -- Divide the quad into subquads, but meet at H
         local s = 1.0 - math.random() * 0.8 - 0.4
         local t = 1.0 - math.random() * 0.8 - 0.4
 
-        subdivide(A, objects.Point.interpolate(G, B, s), H, objects.Point.interpolate(E, D, t))
+        subdivide(A, point.interpolate(G, B, s), H, point.interpolate(E, D, t))
         points[#points+1] = H
-        subdivide(H, objects.Point.interpolate(F, C, s), C, objects.Point.interpolate(I, D, t))
+        subdivide(H, point.interpolate(F, C, s), C, point.interpolate(I, D, t))
       end
 
       points[#points + 1] = A
@@ -629,30 +629,36 @@ function buildNoisyEdges(centers)
 	local path2 = {}
 	
 	for _, p in pairs(centers) do
-		for edge, _ in pairs(p._borders) do
+		for _, edge in pairs(p._borders) do
 			if edge._d1 and edge._d2 and edge._v1 and edge._v2 and not path1[edge._id] then
 				local f = NOISY_LINE_TRADEOFF
-				local t = objects.Point.interpolate(edge._v1._point, edge._d1._point, f)
-				local q = objects.Point.interpolate(edge._v1._point, edge._d2._point, f)
-				local r = objects.Point.interpolate(edge._v2._point, edge._d1._point, f)
-				local s = objects.Point.interpolate(edge._v2._point, edge._d2._point, f)
+				local t = point.interpolate(edge._v1._point, edge._d1._point, f)
+				local q = point.interpolate(edge._v1._point, edge._d2._point, f)
+				local r = point.interpolate(edge._v2._point, edge._d1._point, f)
+				local s = point.interpolate(edge._v2._point, edge._d2._point, f)
+				
+				if t.x ~= math.huge and t.y ~= math.huge and
+					q.x ~= math.huge and q.y ~= math.huge and
+					r.x ~= math.huge and s.y ~= math.huge and
+					s.x ~= math.huge and s.y ~= math.huge then
 
-				local minLength = 100 / NUM_POINTS
-				if edge._d1._biome ~= edge._d2._biome then
-					minLength = 30 / NUM_POINTS
-				end
-				if edge._d1._ocean and edge._d2._ocean then
-					minLength = 1000 / NUM_POINTS
-				end
-				if edge._d1._coast or edge._d2._coast then
-					minLength = 10 / NUM_POINTS
-				end
-				if edge._river then --[[or lava.lava[edge.index])]]
-					minLength = 10 / NUM_POINTS
-				end
+					local minLength = 100 / NUM_POINTS
+					if edge._d1._biome ~= edge._d2._biome then
+						minLength = 30 / NUM_POINTS
+					end
+					if edge._d1._ocean and edge._d2._ocean then
+						minLength = 1000 / NUM_POINTS
+					end
+					if edge._d1._coast or edge._d2._coast then
+						minLength = 10 / NUM_POINTS
+					end
+					if edge._river then --[[or lava.lava[edge.index])]]
+						minLength = 10 / NUM_POINTS
+					end
 
-				path1[edge._id] = buildNoisyLineSegments(edge._v1._point, t, edge._midpoint, q, minLength)
-				path2[edge._id] = buildNoisyLineSegments(edge._v2._point, s, edge._midpoint, r, minLength)
+					path1[edge._id] = buildNoisyLineSegments(edge._v1._point, t, edge._midpoint, q, minLength)
+					path2[edge._id] = buildNoisyLineSegments(edge._v2._point, s, edge._midpoint, r, minLength)
+				end
 			end
 		end
 	end
@@ -683,7 +689,7 @@ function buildMap()
 	profiler:profile('build graph', function()		
 		gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
 	end) -- profile
-	
+		
 	profiler:profile('improve corners', function()					
 		vdgraph.improveCorners(gCorners, gEdges)	
 	end) -- profile
@@ -760,13 +766,19 @@ function buildMap()
 		assignTerritories(gCenters)
 	end) -- profile		
 	
-	--nEdges1, nEdges2 = buildNoisyEdges(gCenters)
+	profiler:profile('build noisy edges', function()		
+		-- build noisy edges
+		--nEdges1, nEdges2 = buildNoisyEdges(gCenters)
+	end)
+	
+	logProfiles()	
 end
 
 function love.load()	
 	profiler = objects.Profiler {}
-
 	buildMap()
+	mapCanvas = love.graphics.newCanvas()
+	drawBiomes(mapCanvas)	
 end
 
 function plot2D(values)
@@ -860,7 +872,7 @@ function drawBiomes(cnv)
 		end
 		]]
 		
-		for ed, _ in pairs(ce._borders) do			
+		for _, ed in pairs(ce._borders) do			
 			if ed._v1 and ed._v2 then
 				--[[
 				local p1, p2 = getNoisyEdges(ed._id)
@@ -918,6 +930,8 @@ function drawBiomes(cnv)
 			end		
 		end
 	end
+	
+	love.graphics.setCanvas()
 end
 
 local territoryColors = 
@@ -947,15 +961,23 @@ local territoryNames =
 		'Polologogo',
 		'Westerlund'
 	}
-function drawTerritories()
-	local sw, sh = love.graphics.getMode()	
+function drawTerritories(cnv)
+	local sw, sh 
+	
+	if cnv then
+		sw, sh = cnv:getWidth(), cnv:getHeight()
+		love.graphics.setCanvas(cnv)
+	else
+		sw, sh = love.graphics.getMode()	
+		love.graphics.setCanvas()
+	end	
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 	
 	local tPoints = {}
 	local tCounts = {}
 	for i = 1, NUM_FACTIONS do
-		tPoints[i] = objects.Point{0,0}
+		tPoints[i] = point:new(0,0)
 		tCounts[i] = 0
 	end
 
@@ -973,7 +995,7 @@ function drawTerritories()
 		end
 							
 		local verts = {}
-		for ed, _ in pairs(ce._borders) do
+		for _, ed in pairs(ce._borders) do
 			if ed._v1 and ed._v2 then
 				local x1 = ed._v1._point.x
 				local y1 = ed._v1._point.y
@@ -1019,11 +1041,19 @@ function drawTerritories()
 		love.graphics.print(txt,x,y)
 	end
 	
-	
+	love.graphics.setCanvas()
 end
 
-function drawElevation()
-	local sw, sh = love.graphics.getMode()	
+function drawElevation(cnv)
+	local sw, sh 
+	
+	if cnv then
+		sw, sh = cnv:getWidth(), cnv:getHeight()
+		love.graphics.setCanvas(cnv)
+	else
+		sw, sh = love.graphics.getMode()	
+		love.graphics.setCanvas()
+	end	
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 	
@@ -1100,10 +1130,19 @@ function drawElevation()
 		love.graphics.setColor(r * elev,g * elev,b * elev,255)
 		love.graphics.circle( 'fill', x, y, 2)
 	end	
+	love.graphics.setCanvas()	
 end
 
-function drawMoisture()
-	local sw, sh = love.graphics.getMode()	
+function drawMoisture(cnv)
+	local sw, sh 
+	
+	if cnv then
+		sw, sh = cnv:getWidth(), cnv:getHeight()
+		love.graphics.setCanvas(cnv)
+	else
+		sw, sh = love.graphics.getMode()	
+		love.graphics.setCanvas()
+	end	
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 	
@@ -1175,6 +1214,7 @@ function drawMoisture()
 		love.graphics.setColor(r * elev,g * elev,b * elev,255)
 		love.graphics.circle( 'fill', x, y, 2)
 	end	
+	love.graphics.setCanvas()	
 end
 
 
@@ -1184,18 +1224,9 @@ function love.draw()
 		return
 	end
 	
-	if drawMode == 'biomes' then
-		drawBiomes()
-	elseif drawMode == 'elevation' then
-		drawElevation()
-	elseif drawMode == 'moisture' then
-		drawMoisture()
-	elseif drawMode == 'territories' then
-		drawTerritories()
-	end
+	love.graphics.draw(mapCanvas,0,0)
 	
-	love.graphics.setColor(255,255,255,200)
-	
+	love.graphics.setColor(255,255,255,200)	
 	love.graphics.setFont(bigFont)
 	love.graphics.print(drawMode, 10, 10)
 	
@@ -1273,6 +1304,16 @@ function love.update(dt)
 	end	
 end
 
+function logProfiles()
+	log.log(' === PROFILE RESULTS === ')
+	for k, v in pairs(profiler:profiles()) do
+		log.log('----------------------------------------------------------------------')
+		log.log(k)
+		log.log(table.dump(v))
+		log.log('----------------------------------------------------------------------')
+	end
+end
+
 function love.keyreleased(key)
 	if key == 'w' then
 		showPerlin = 1 - showPerlin
@@ -1301,23 +1342,18 @@ function love.keyreleased(key)
 	end		
 	if key == '1' then
 		drawMode = 'biomes'
+		drawBiomes(mapCanvas)
 	end
 	if key == '2' then
 		drawMode = 'elevation'
+		drawElevation(mapCanvas)
 	end
 	if key == '3' then
 		drawMode = 'moisture'
+		drawMoisture(mapCanvas)
 	end
 	if key == '4' then
 		drawMode = 'territories'
+		drawTerritories(mapCanvas)
 	end			
-	if key == '0' then
-		log.log(' === PROFILE RESULTS === ')
-		for k, v in pairs(profiler:profiles()) do
-			log.log('----------------------------------------------------------------------')
-			log.log(k)
-			log.log(table.dump(v))
-			log.log('----------------------------------------------------------------------')
-		end
-	end
 end

@@ -6,17 +6,14 @@
 
 package.path = package.path .. ';..\\?.lua' 
 
-local Object = (require 'object').Object
+local setmetatable = setmetatable
 
-module('objects')
-
-Edge = Object{ _init = { '_id' } }
+module('edge')
 
 --
---  Edge constructor
+-- 	Edge constructor
 --
-function Edge:_clone(values)
-	local o = Object._clone(self,values)
-	
-	return o
+function _M:new(id)
+	self.__index = self    
+	return setmetatable({_id=id},self)
 end

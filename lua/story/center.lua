@@ -6,21 +6,16 @@
 
 package.path = package.path .. ';..\\?.lua' 
 
-local Object = (require 'object').Object
+local setmetatable = setmetatable
 
-module('objects')
-
-Center = Object{ _init = { '_id', '_point' } }
+module('center')
 
 --
---  Center constructor
+-- 	Center constructor
 --
-function Center:_clone(values)
-	local o = Object._clone(self,values)
-	
-	o._neighbors = {}
-	o._borders = {}
-	o._corners = {}
-
-	return o
+function _M:new(id,p)
+	self.__index = self    
+	return setmetatable(
+		{_id=id,_point=p,_neighbors={},_borders={},_corners={}},
+		self)
 end
