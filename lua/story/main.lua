@@ -27,6 +27,7 @@ local islandFactor, landMass, biomeFeatures = 0.8, 6, 2.5
 local showPerlin = 0
 
 local bigFont = love.graphics.newFont(48)
+local medFont = love.graphics.newFont(24)
 local smallFont = love.graphics.newFont(14)
 
 --
@@ -562,7 +563,7 @@ function assignTerritories(centers)
 					if not n._territory then
 						n._territory = q._territory
 						tCount[q._territory] = tCount[q._territory] + 1 
-						if tCount[q._territory] < maxTerritories then
+						if tCount[q._territory] < maxTerritories or queue:count() == 0 then
 							queue:pushright(n)
 						end
 					end
@@ -730,22 +731,47 @@ local territoryColors =
 		{ 255, 255 ,255 },
 		{ 128, 128 ,128 },
 		{ 128, 128 ,0 },
-		{ 0, 128 ,128 }
-		
+		{ 0, 128 ,128 }		
+	}
+	
+local territoryNames = 
+	{
+		'Smeltzville',
+		'Virginia',
+		'Kleinrich',
+		'Apolonia',
+		'CKPP',
+		'Gulgantua',
+		'Fry',
+		'Monarchsland',
+		'Polologogo',
+		'Westerlund'
 	}
 function drawTerritories()
 	local sw, sh = love.graphics.getMode()	
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
+	
+	local tPoints = {}
+	local tCounts = {}
+	for i = 1, NUM_FACTIONS do
+		tPoints[i] = objects.Point{0,0}
+		tCounts[i] = 0
+	end
 
 	for _, ce in pairs(gCenters) do
-		local col = territoryColors[ce._territory]
-		if col then
+		local col
+		local ter = ce._territory		
+		if ter then
+			col = territoryColors[ce._territory]
 			love.graphics.setColor(col[1], col[2], col[3], 180)
+			tPoints[ter].x = tPoints[ter].x + ce._point.x
+			tPoints[ter].y = tPoints[ter].y + ce._point.y
+			tCounts[ter] = tCounts[ter] + 1
 		else
 			love.graphics.setColor(64,64,64,64)
 		end
-	
+							
 		local verts = {}
 		for ed, _ in pairs(ce._borders) do
 			if ed._v1 and ed._v2 then
@@ -781,6 +807,19 @@ function drawTerritories()
 			end			
 		end		
 	end
+	
+	love.graphics.setFont(medFont)	
+	for i = 1, NUM_FACTIONS do
+		tPoints[i].x = tPoints[i].x / tCounts[i]
+		tPoints[i].y = tPoints[i].y / tCounts[i]
+		
+		local txt = territoryNames[i]
+		local x = tPoints[i].x * sw - (medFont:getWidth(txt) / 2)
+		local y = tPoints[i].y * sh - (medFont:getHeight(txt) / 2)				
+		love.graphics.print(txt,x,y)
+	end
+	
+	
 end
 
 function drawElevation()
@@ -969,7 +1008,8 @@ function love.draw()
 	love.graphics.print('rivers (D-C): ' .. NUM_RIVERS, 10, 190)
 	love.graphics.print('land mass (F-V): ' .. LAKE_THRESHOLD, 10, 210)
 	love.graphics.print('seed (G-B): ' .. seed, 10, 230)
-	love.graphics.print('rebuild map (O)', 10, 250)
+	love.graphics.print('factions (H-N): ' .. NUM_FACTIONS, 10, 250)
+	love.graphics.print('rebuild map (O)', 10, 270)
 end
 
 function love.update(dt)
@@ -1050,7 +1090,7 @@ function love.keyreleased(key)
 	if key == 'h' then
 		NUM_FACTIONS = NUM_FACTIONS + 1
 	end
-	if key == 'j' then
+	if key == 'n' then
 		NUM_FACTIONS = NUM_FACTIONS - 1
 	end	
 	if NUM_FACTIONS < 1 then NUM_FACTIONS = 1 end
