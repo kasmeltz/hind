@@ -18,7 +18,7 @@ require 'point'
 -- @TODO put this all into a map generator class
 -- @todo make these adjustable?
 local NUM_LLOYD_ITERATIONS = 2
-local NUM_POINTS = 6000
+local NUM_POINTS = 10000
 local LAKE_THRESHOLD = 0.3
 local SIZE = 1
 local NUM_RIVERS = 1000
@@ -26,6 +26,8 @@ local NUM_FACTIONS = 6
 local seed = os.time()
 local islandFactor, landMass, biomeFeatures = 0.8, 6, 2.5
 local showPerlin = 0
+
+local NOISY_LINE_TRADEOFF = 0.5
 
 local bigFont = love.graphics.newFont(48)
 local medFont = love.graphics.newFont(24)
@@ -573,6 +575,90 @@ function assignTerritories(centers)
 		end		
 	end
 end
+
+--
+--	Helper function: build a single noisy line in a quadrilateral A-B-C-D,
+--	and store the output points in a table
+--
+function buildNoisyLineSegments(A, B, C, D, minLength)
+      local points = {}
+
+      local function subdivide(A, B, C, D)
+        if A:subtract(C):norm() < minLength or B:subtract(D):norm() < minLength then
+			return
+		end
+
+        -- Subdivide the quadrilateral
+        local p = math.random() * 0.6 + 0.2 
+        local q = math.random() * 0.6 + 0.2
+
+        -- Midpoints
+        local E = objects.Point.interpolate(A,D,p)
+		local F = objects.Point.interpolate(B,C,p)
+		local G = objects.Point.interpolate(A,B,q)
+		local I = objects.Point.interpolate(D,C,q)
+        
+        -- Central point
+        local H = objects.Point.interpolate(E,F,q)
+        
+        -- Divide the quad into subquads, but meet at H
+        local s = 1.0 - math.random() * 0.8 - 0.4
+        local t = 1.0 - math.random() * 0.8 - 0.4
+
+        subdivide(A, objects.Point.interpolate(G, B, s), H, objects.Point.interpolate(E, D, t))
+        points[#points+1] = H
+        subdivide(H, objects.Point.interpolate(F, C, s), C, objects.Point.interpolate(I, D, t))
+      end
+
+      points[#points + 1] = A
+      subdivide(A, B, C, D)
+      points[#points + 1] = C
+      
+	  return points
+end
+  
+--
+--  Build noisy line paths for each of the Voronoi edges. There are
+--  two noisy line paths for each edge, each covering half the
+--  distance: path0 is from v0 to the midpoint and path1 is from v1
+--  to the midpoint. When drawing the polygons, one or the other
+--  must be drawn in reverse order.
+--
+function buildNoisyEdges(centers)
+	local path1 = {}
+	local path2 = {}
+	
+	for _, p in pairs(centers) do
+		for edge, _ in pairs(p._borders) do
+			if edge._d1 and edge._d2 and edge._v1 and edge._v2 and not path1[edge._id] then
+				local f = NOISY_LINE_TRADEOFF
+				local t = objects.Point.interpolate(edge._v1._point, edge._d1._point, f)
+				local q = objects.Point.interpolate(edge._v1._point, edge._d2._point, f)
+				local r = objects.Point.interpolate(edge._v2._point, edge._d1._point, f)
+				local s = objects.Point.interpolate(edge._v2._point, edge._d2._point, f)
+
+				local minLength = 100 / NUM_POINTS
+				if edge._d1._biome ~= edge._d2._biome then
+					minLength = 30 / NUM_POINTS
+				end
+				if edge._d1._ocean and edge._d2._ocean then
+					minLength = 1000 / NUM_POINTS
+				end
+				if edge._d1._coast or edge._d2._coast then
+					minLength = 10 / NUM_POINTS
+				end
+				if edge._river then --[[or lava.lava[edge.index])]]
+					minLength = 10 / NUM_POINTS
+				end
+
+				path1[edge._id] = buildNoisyLineSegments(edge._v1._point, t, edge._midpoint, q, minLength)
+				path2[edge._id] = buildNoisyLineSegments(edge._v2._point, s, edge._midpoint, r, minLength)
+			end
+		end
+	end
+	
+	return path1, path2
+end
 	
 function buildMap()
 	local points
@@ -673,6 +759,8 @@ function buildMap()
 		-- assign teritories
 		assignTerritories(gCenters)
 	end) -- profile		
+	
+	--nEdges1, nEdges2 = buildNoisyEdges(gCenters)
 end
 
 function love.load()	
@@ -694,7 +782,7 @@ local drawMode = 'biomes'
 
 local biomeColors = 
 	{ 
-		OCEAN = { 0, 0, 100 },
+		OCEAN = { 0, 20, 60 },
 		LAKE = { 0, 0, 200 },
 		MARSH = { 20, 30, 70 },
 		ICE = { 170, 170, 255 },
@@ -713,6 +801,31 @@ local biomeColors =
 		TROPICAL_SEASONAL_FOREST = { 140, 160, 80 },
 		SUBTROPICAL_DESERT = { 170, 170, 0 }
 	}
+	
+--
+--  Draws noisy edges
+--
+function getNoisyEdges(id)
+	local p1 = {}
+	local p2 = {}
+		
+	local segs = nEdges1[id]
+	if segs then
+		for _, v in ipairs(segs) do
+			p1[#p1+1] = v
+		end
+	end
+	
+	local segs = nEdges2[id]
+	if segs then
+		for _, v in ipairs(segs) do
+			p2[#p2+1] = v
+		end	
+	end
+	
+	return p1, p2
+end
+
 function drawBiomes(cnv)
 	local sw, sh 
 	
@@ -729,14 +842,31 @@ function drawBiomes(cnv)
 	for _, ce in pairs(gCenters) do
 		local col = biomeColors[ce._biome]
 		if col then
-			love.graphics.setColor(col[1], col[2], col[3], 180)
+			love.graphics.setColor(col[1], col[2], col[3], 255)
 		else
 			love.graphics.setColor(0,0,0,255)
 		end
 	
 		local verts = {}
-		for ed, _ in pairs(ce._borders) do
+		
+		--[[
+		local function addNoisyVerts(ps)
+			for i = 1, #ps - 1 do
+				verts[#verts+1] = ps[i].x * sw
+				verts[#verts+1] = ps[i].y * sh
+				verts[#verts+1] = ps[i+1].x * sw
+				verts[#verts+1] = ps[i+1].y * sh
+			end		
+		end
+		]]
+		
+		for ed, _ in pairs(ce._borders) do			
 			if ed._v1 and ed._v2 then
+				--[[
+				local p1, p2 = getNoisyEdges(ed._id)
+				addNoisyVerts(p1)
+				addNoisyVerts(p2)
+				]]				
 				local x1 = ed._v1._point.x
 				local y1 = ed._v1._point.y
 				local x2 = ed._v2._point.x
@@ -746,28 +876,47 @@ function drawBiomes(cnv)
 				verts[#verts+1] = x2 * sw
 				verts[#verts+1] = y2 * sh
 			end
-		end
+		end		
 		
 		if #verts >= 6 then
 			love.graphics.polygon('fill', verts)
 		end
 	end
 	
+	--[[
+	local function drawRiverEdge(ps)
+		for i = 1, #ps - 1 do
+			local x1 = ps[i].x * sw
+			local y1 = ps[i].y * sh
+			local x2 = ps[i+1].x * sw
+			local y2 = ps[i+1].y * sh
+			love.graphics.line(x1,y1,x2,y2)
+		end
+	end
+	]]
+	
 	for _, ed in pairs(gEdges) do
-		if ed._v1 and ed._v2 then		
-			if ed._river > 0 then
-				love.graphics.setColor(0, 0, 255, 255)		
-				local x1 = ed._v1._point.x
-				local y1 = ed._v1._point.y
-				local x2 = ed._v2._point.x
-				local y2 = ed._v2._point.y
-				x1 = x1 * sw
-				y1 = y1 * sh
-				x2 = x2 * sw
-				y2 = y2 * sh
-				love.graphics.line(x1,y1,x2,y2)					
-			end			
-		end		
+		if ed._d1 and ed._d2 and (not ed._d1._water or not ed._d2._water) then
+			if ed._v1 and ed._v2 then		
+				if ed._river > 0 then
+					love.graphics.setColor(0, 0, 255, 255)	
+					--[[
+					local p1, p2 = getNoisyEdges(ed._id)
+					drawRiverEdge(p1)
+					drawRiverEdge(p2)
+					]]					
+					local x1 = ed._v1._point.x
+					local y1 = ed._v1._point.y
+					local x2 = ed._v2._point.x
+					local y2 = ed._v2._point.y
+					x1 = x1 * sw
+					y1 = y1 * sh
+					x2 = x2 * sw
+					y2 = y2 * sh
+					love.graphics.line(x1,y1,x2,y2)
+				end			
+			end		
+		end
 	end
 end
 
@@ -1094,7 +1243,7 @@ function love.update(dt)
 	end	
 	
 	if NUM_POINTS < 100 then NUM_POINTS = 100 end	
-	if NUM_POINTS > 40000 then NUM_POINTS = 40000 end
+	if NUM_POINTS > 60000 then NUM_POINTS = 60000 end
 	
 	if love.keyboard.isDown('d') then
 		NUM_RIVERS = NUM_RIVERS + 50
