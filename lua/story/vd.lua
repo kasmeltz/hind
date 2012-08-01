@@ -46,7 +46,7 @@ end
 function generatePoints(params)
 	local params = params or {}
 	
-	math.randomseed( params.seed or os.time() )
+	math.randomseed( params.seed )
 	
 	params.filename = params.filename or 'points.dat'		
 	params.dimension = params.dimension or 2	

@@ -17,14 +17,16 @@ require 'point'
 -- @TODO put this all into a map generator class
 -- @todo make these adjustable?
 local NUM_LLOYD_ITERATIONS = 2
-local NUM_POINTS = 2000
+local NUM_POINTS = 6000
 local LAKE_THRESHOLD = 0.3
 local SIZE = 1
-local NUM_RIVERS = 500
+local NUM_RIVERS = 1000
 local seed = os.time()
+local islandFactor, landMass, biomeFeatures = 0.8, 6, 2.5
+local showPerlin = 0
 
 local bigFont = love.graphics.newFont(48)
-local smallFont = love.graphics.newFont(12)
+local smallFont = love.graphics.newFont(14)
 
 --
 --  Improve the random set of points with Lloyd Relaxation.
@@ -74,12 +76,14 @@ function improveRandomPoints(points)
 	return points
 end
 	
--- @TODO MAKE THIS ADJUSTABLE
+local perlin
+function makePerlin()
+	perlin = perlin2D(seed, 256, 256, islandFactor, landMass, biomeFeatures)
+end
+	
 --
---  Returns true if the 
+--  Returns true if the point is on land
 --
-local pa, pb, pc = 0.8, 7, 1.7
-local perlin = perlin2D(seed, 256, 256, pa, pb, pc)
 function islandShape(p)
 	local x = math.floor((p.x + 1) * 128)
 	local y = math.floor((p.y + 1) * 128)
@@ -515,6 +519,8 @@ function assignBiomes(centers)
 end
 	
 function buildMap()
+	makePerlin()
+
 	local points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
 	local points = improveRandomPoints(points)
 	local corners, edges, centers, adjacencies = vd.voronoi(points)
@@ -574,7 +580,6 @@ function love.load()
 	buildMap()
 end
 
-local showPerlin = 0
 function plot2D(values)
   for r = 1, #values do
     for c = 1, #(values[1]) do
@@ -586,18 +591,71 @@ end
 
 local drawMode = 'biomes'
 
+--[[
+			
+			
+			
+			return 'SUBTROPICAL_DESERT'
+]]
+
+local biomeColors = 
+	{ 
+		OCEAN = { 0, 0, 100 },
+		LAKE = { 0, 0, 200 },
+		MARSH = { 20, 30, 70 },
+		ICE = { 170, 170, 255 },
+		BEACH = { 100, 100, 50 },
+		SNOW = { 220, 220, 255 },
+		TUNDRA = { 128, 128, 128 },
+		BARE = { 64, 64, 64 },
+		SCORCHED = { 80, 80, 40 },
+		TAIGA = { 0, 40, 0 },
+		SHRUBLAND = { 100, 100, 20 },
+		GRASSLAND = { 0, 130, 0 },
+		TEMPERATE_DESERT = { 130, 130, 0},
+		TEMPERATE_DECIDUOUS_FOREST = { 30, 80, 30} ,
+		TEMPERATE_RAIN_FOREST = { 0, 80, 80 },		
+		TROPICAL_RAIN_FOREST = { 50, 200, 50 },
+		TROPICAL_SEASONAL_FOREST = { 140, 160, 80 },
+		SUBTROPICAL_DESERT = { 170, 170, 0 }
+	}
+	
 function drawBiomes()
 	local sw, sh = love.graphics.getMode()	
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 
 	for _, ce in pairs(gCenters) do
-		if ce._biome == 'OCEAN' then
-			
-		end		
-		
+		local col = biomeColors[ce._biome]
+		if col then
+			love.graphics.setColor(col[1], col[2], col[3], 255)
+		else
+			love.graphics.setColor(0,0,0,255)
+		end
+	
+		local verts = {}
 		for ed, _ in pairs(ce._borders) do
 			if ed._v1 and ed._v2 then
+				local x1 = ed._v1._point.x
+				local y1 = ed._v1._point.y
+				local x2 = ed._v2._point.x
+				local y2 = ed._v2._point.y
+				verts[#verts+1] = x1 * sw
+				verts[#verts+1] = y1 * sh
+				verts[#verts+1] = x2 * sw
+				verts[#verts+1] = y2 * sh
+			end
+		end
+		
+		if #verts >= 6 then
+			love.graphics.polygon('fill', verts)
+		end
+	end
+	
+	for _, ed in pairs(gEdges) do
+		if ed._v1 and ed._v2 then		
+			if ed._river > 0 then
+				love.graphics.setColor(0, 0, 255, 255)		
 				local x1 = ed._v1._point.x
 				local y1 = ed._v1._point.y
 				local x2 = ed._v2._point.x
@@ -607,8 +665,8 @@ function drawBiomes()
 				x2 = x2 * sw
 				y2 = y2 * sh
 				love.graphics.line(x1,y1,x2,y2)					
-			end
-		end
+			end			
+		end		
 	end
 end
 
@@ -680,8 +738,10 @@ function drawElevation()
 		local elev = c._elevation
 		if c._ocean then		
 			r = 0 g = 0 b = 255
+			elev = 1
 		elseif c._coast then
 			r = 255 g = 255 b = 0
+			elev = 1
 		else
 			r = 0 g = 255 b = 0
 		end		
@@ -780,48 +840,82 @@ function love.draw()
 		drawMoisture()
 	end
 	
-	love.graphics.setColor(255,255,255,255)
+	love.graphics.setColor(255,255,0,255)
 	
 	love.graphics.setFont(bigFont)
 	love.graphics.print(drawMode, 10, 10)
 	
 	love.graphics.setFont(smallFont)	
-	love.graphics.print(pa, 10,90)
-	love.graphics.print(pb, 10,110)
-	love.graphics.print(pc, 10,130)	
+	love.graphics.print('1: biomes 2: elevation 3: moisture', 10, 90)
+	love.graphics.print('noise island factor (approx.) (UP-DOWN): ' .. islandFactor, 10,110)
+	love.graphics.print('noise land mass (approx.) (LEFT-RIGHT): ' .. landMass, 10,130)	
+	love.graphics.print('noise biome features (approx.) (A-Z): ' .. biomeFeatures, 10,150)	
+	love.graphics.print('polygons (S-X): ' .. NUM_POINTS, 10, 170)
+	love.graphics.print('rivers (D-C): ' .. NUM_RIVERS, 10, 190)
+	love.graphics.print('land mass (F-V): ' .. LAKE_THRESHOLD, 10, 210)
+	love.graphics.print('seed (G-B): ' .. seed, 10, 230)
+	love.graphics.print('rebuild map (M)', 10, 250)
 end
 
 function love.update(dt)
 
 	local updatePerlin = false
 	if love.keyboard.isDown('up') then
-		pa = pa + 0.1
-		updatePerlin = true
+		islandFactor = islandFactor + 0.05
 	end
 	if love.keyboard.isDown('down') then
-		pa = pa - 0.1
-		updatePerlin = true
+		islandFactor = islandFactor - 0.05
 	end
-	if love.keyboard.isDown('right') then
-		pb = pb + 1
-		updatePerlin = true
-	end
-	if love.keyboard.isDown('left') then
-		pb = pb - 1
-		updatePerlin = true
-	end	
+	
+	if islandFactor < 0 then islandFactor = 0 end	
+	if islandFactor > 2 then islandFactor = 2 end
+	
 	if love.keyboard.isDown('a') then
-		pc = pc - 0.1
-		updatePerlin = true
+		biomeFeatures = biomeFeatures + 0.05
 	end
 	if love.keyboard.isDown('z') then
-		pc = pc + 0.1
-		updatePerlin = true
+		biomeFeatures = biomeFeatures - 0.05
 	end	
 	
-	if updatePerlin then
-		perlin = perlin2D(seed, 256, 256, pa, pb, pc)
+	if biomeFeatures < 0 then biomeFeatures = 0 end	
+	if biomeFeatures > 5 then biomeFeatures = 5 end
+	
+	if love.keyboard.isDown('s') then
+		NUM_POINTS = NUM_POINTS + 100
 	end
+	if love.keyboard.isDown('x') then
+		NUM_POINTS = NUM_POINTS - 100
+	end	
+	
+	if NUM_POINTS < 100 then NUM_POINTS = 100 end	
+	if NUM_POINTS > 6000 then NUM_POINTS = 6000 end
+	
+	if love.keyboard.isDown('d') then
+		NUM_RIVERS = NUM_RIVERS + 50
+	end
+	if love.keyboard.isDown('c') then
+		NUM_RIVERS = NUM_RIVERS - 50
+	end	
+	
+	if NUM_RIVERS < 50 then NUM_RIVERS = 50 end	
+	if NUM_RIVERS > 6000 then NUM_RIVERS = 6000 end
+	
+	if love.keyboard.isDown('f') then
+		LAKE_THRESHOLD = LAKE_THRESHOLD + 0.005
+	end
+	if love.keyboard.isDown('v') then
+		LAKE_THRESHOLD = LAKE_THRESHOLD - 0.005
+	end	
+	
+	if LAKE_THRESHOLD < 0 then LAKE_THRESHOLD = 0 end	
+	if LAKE_THRESHOLD > 1 then LAKE_THRESHOLD = 1 end
+	
+	if love.keyboard.isDown('g') then
+		seed = seed + 162837
+	end
+	if love.keyboard.isDown('b') then
+		seed = seed - 162837
+	end	
 end
 
 function love.keyreleased(key)
@@ -829,10 +923,18 @@ function love.keyreleased(key)
 		showPerlin = 1 - showPerlin
 	end
 
+	if key == 'right' then
+		landMass = landMass + 1
+	end
+	if key == 'left' then
+		landMass = landMass - 1
+	end	
+	if landMass < 1 then landMass = 1 end
+	if landMass > 10 then landMass = 10 end
+	
 	if key == 'm' then
 		buildMap()
-	end	
-	
+	end		
 	if key == '1' then
 		drawMode = 'biomes'
 	end
