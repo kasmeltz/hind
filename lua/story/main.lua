@@ -21,6 +21,7 @@ local NUM_POINTS = 6000
 local LAKE_THRESHOLD = 0.3
 local SIZE = 1
 local NUM_RIVERS = 1000
+local NUM_FACTIONS = 6
 local seed = os.time()
 local islandFactor, landMass, biomeFeatures = 0.8, 6, 2.5
 local showPerlin = 0
@@ -512,9 +513,62 @@ function getBiome(p)
 	end
 end
 	
+--
+--  Assigns biomes
+--
 function assignBiomes(centers)
 	for _, p in pairs(centers) do	
 		p._biome = getBiome(p)
+	end
+end
+
+--
+--  Splis the map up into political territories
+--	
+function assignTerritories(centers)
+	local queue = double_queue:new()
+	
+	local tCount = {}
+	local maxTerritories = NUM_POINTS / (NUM_FACTIONS*0.33)
+	
+	-- assign initial territories
+	local function isEmpty(q)
+		if q._territory then return false end
+		for r, _ in pairs(q._neighbors) do
+			if r._territory then return false end
+		end
+		return true
+	end
+	
+	for i = 1, NUM_FACTIONS do
+		local canContinue
+		local q
+		repeat			
+			q = centers[math.floor(math.random() * #centers)]
+			canContinue = isEmpty(q)
+			if q._ocean then canContinue = false end
+		until canContinue
+		q._territory = i
+		tCount[i] = 1
+		queue:pushright(q)
+	end
+	
+	while queue:count() > 0 do
+		local q = queue:popleft()
+		-- attempt to occupy all neighbouring squares
+		if table.count(q._neighbors) > 0 then			
+			for n, _ in pairs(q._neighbors) do
+				if not n._ocean then
+					if not n._territory then
+						n._territory = q._territory
+						tCount[q._territory] = tCount[q._territory] + 1 
+						if tCount[q._territory] < maxTerritories then
+							queue:pushright(n)
+						end
+					end
+				end
+			end
+		end		
 	end
 end
 	
@@ -574,6 +628,9 @@ function buildMap()
 	
 	-- assign biomes
 	assignBiomes(gCenters)
+	
+	-- assign teritories
+	assignTerritories(gCenters)
 end
 
 function love.load()	
@@ -590,13 +647,6 @@ function plot2D(values)
 end
 
 local drawMode = 'biomes'
-
---[[
-			
-			
-			
-			return 'SUBTROPICAL_DESERT'
-]]
 
 local biomeColors = 
 	{ 
@@ -619,7 +669,6 @@ local biomeColors =
 		TROPICAL_SEASONAL_FOREST = { 140, 160, 80 },
 		SUBTROPICAL_DESERT = { 170, 170, 0 }
 	}
-	
 function drawBiomes()
 	local sw, sh = love.graphics.getMode()	
 	love.graphics.setBackgroundColor(128,128,128)
@@ -628,7 +677,7 @@ function drawBiomes()
 	for _, ce in pairs(gCenters) do
 		local col = biomeColors[ce._biome]
 		if col then
-			love.graphics.setColor(col[1], col[2], col[3], 255)
+			love.graphics.setColor(col[1], col[2], col[3], 180)
 		else
 			love.graphics.setColor(0,0,0,255)
 		end
@@ -656,6 +705,70 @@ function drawBiomes()
 		if ed._v1 and ed._v2 then		
 			if ed._river > 0 then
 				love.graphics.setColor(0, 0, 255, 255)		
+				local x1 = ed._v1._point.x
+				local y1 = ed._v1._point.y
+				local x2 = ed._v2._point.x
+				local y2 = ed._v2._point.y
+				x1 = x1 * sw
+				y1 = y1 * sh
+				x2 = x2 * sw
+				y2 = y2 * sh
+				love.graphics.line(x1,y1,x2,y2)					
+			end			
+		end		
+	end
+end
+
+local territoryColors = 
+	{
+		{ 255, 0 ,0 },
+		{ 255, 255 ,0 },
+		{ 0, 255 ,255 },
+		{ 0, 0, 255 },
+		{ 255, 0 ,255 },
+		{ 0, 255 ,0 },
+		{ 255, 255 ,255 },
+		{ 128, 128 ,128 },
+		{ 128, 128 ,0 },
+		{ 0, 128 ,128 }
+		
+	}
+function drawTerritories()
+	local sw, sh = love.graphics.getMode()	
+	love.graphics.setBackgroundColor(128,128,128)
+	love.graphics.clear()
+
+	for _, ce in pairs(gCenters) do
+		local col = territoryColors[ce._territory]
+		if col then
+			love.graphics.setColor(col[1], col[2], col[3], 180)
+		else
+			love.graphics.setColor(64,64,64,64)
+		end
+	
+		local verts = {}
+		for ed, _ in pairs(ce._borders) do
+			if ed._v1 and ed._v2 then
+				local x1 = ed._v1._point.x
+				local y1 = ed._v1._point.y
+				local x2 = ed._v2._point.x
+				local y2 = ed._v2._point.y
+				verts[#verts+1] = x1 * sw
+				verts[#verts+1] = y1 * sh
+				verts[#verts+1] = x2 * sw
+				verts[#verts+1] = y2 * sh
+			end
+		end
+		
+		if #verts >= 6 then
+			love.graphics.polygon('fill', verts)
+		end
+	end
+	
+	for _, ed in pairs(gEdges) do
+		if ed._d1 and ed._d2 and ed._v1 and ed._v2 then		
+			if ed._d1._territory ~= ed._d2._territory then
+				love.graphics.setColor(0, 0, 0, 255)		
 				local x1 = ed._v1._point.x
 				local y1 = ed._v1._point.y
 				local x2 = ed._v2._point.x
@@ -838,15 +951,17 @@ function love.draw()
 		drawElevation()
 	elseif drawMode == 'moisture' then
 		drawMoisture()
+	elseif drawMode == 'territories' then
+		drawTerritories()
 	end
 	
-	love.graphics.setColor(255,255,0,255)
+	love.graphics.setColor(255,255,255,200)
 	
 	love.graphics.setFont(bigFont)
 	love.graphics.print(drawMode, 10, 10)
 	
 	love.graphics.setFont(smallFont)	
-	love.graphics.print('1: biomes 2: elevation 3: moisture', 10, 90)
+	love.graphics.print('1: biomes 2: elevation 3: moisture 4: territories', 10, 90)
 	love.graphics.print('noise island factor (approx.) (UP-DOWN): ' .. islandFactor, 10,110)
 	love.graphics.print('noise land mass (approx.) (LEFT-RIGHT): ' .. landMass, 10,130)	
 	love.graphics.print('noise biome features (approx.) (A-Z): ' .. biomeFeatures, 10,150)	
@@ -854,7 +969,7 @@ function love.draw()
 	love.graphics.print('rivers (D-C): ' .. NUM_RIVERS, 10, 190)
 	love.graphics.print('land mass (F-V): ' .. LAKE_THRESHOLD, 10, 210)
 	love.graphics.print('seed (G-B): ' .. seed, 10, 230)
-	love.graphics.print('rebuild map (M)', 10, 250)
+	love.graphics.print('rebuild map (O)', 10, 250)
 end
 
 function love.update(dt)
@@ -888,7 +1003,7 @@ function love.update(dt)
 	end	
 	
 	if NUM_POINTS < 100 then NUM_POINTS = 100 end	
-	if NUM_POINTS > 6000 then NUM_POINTS = 6000 end
+	if NUM_POINTS > 10000 then NUM_POINTS = 10000 end
 	
 	if love.keyboard.isDown('d') then
 		NUM_RIVERS = NUM_RIVERS + 50
@@ -931,8 +1046,17 @@ function love.keyreleased(key)
 	end	
 	if landMass < 1 then landMass = 1 end
 	if landMass > 10 then landMass = 10 end
+
+	if key == 'h' then
+		NUM_FACTIONS = NUM_FACTIONS + 1
+	end
+	if key == 'j' then
+		NUM_FACTIONS = NUM_FACTIONS - 1
+	end	
+	if NUM_FACTIONS < 1 then NUM_FACTIONS = 1 end
+	if NUM_FACTIONS > 10 then NUM_FACTIONS = 10 end	
 	
-	if key == 'm' then
+	if key == 'o' then
 		buildMap()
 	end		
 	if key == '1' then
@@ -944,5 +1068,7 @@ function love.keyreleased(key)
 	if key == '3' then
 		drawMode = 'moisture'
 	end
-	
+	if key == '4' then
+		drawMode = 'territories'
+	end			
 end
