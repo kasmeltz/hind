@@ -6,6 +6,7 @@
 
 package.path = package.path .. ';..\\?.lua' 
 
+require 'profiler'
 require 'double_queue'
 require 'perlin'
 require 'vd'
@@ -574,67 +575,109 @@ function assignTerritories(centers)
 end
 	
 function buildMap()
-	makePerlin()
+	local points
+	local corners, edges, centers, adjacencies
 
-	local points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
-	local points = improveRandomPoints(points)
-	local corners, edges, centers, adjacencies = vd.voronoi(points)
-	
-	gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
-	vdgraph.improveCorners(gCorners, gEdges)	
-	
-	-- Determine the elevations and water at Voronoi corners
-	assignCornerElevations(gCorners)
+	profiler:profile('make perlin noise', function()
+		makePerlin()
+	end) -- profile
 
-	-- Determine polygon and corner type: ocean, coast, land.
-	assignOceanCoastAndLand(gCorners, gCenters)
+	profiler:profile('generate points ', function()	
+		points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
+	end) -- profile
 
-    -- Rescale elevations so that the highest is 1.0, and they're
-	-- distributed well. We want lower elevations to be more common
-	-- than higher elevations, in proportions approximately matching
-	-- concentric rings. That is, the lowest elevation is the
-	-- largest ring around the island, and therefore should more
-	-- land area than the highest elevation, which is the very
-	-- center of a perfectly circular island.
-	redistributeElevations(landCorners(gCorners))
+	profiler:profile('improve random points ', function()		
+		points = improveRandomPoints(points)
+	end) -- profile		
 	
-	 -- Assign elevations to non-land corners
-	for _, q in pairs(gCorners) do
-		if q._ocean or q._coast then
-			q._elevation = 0.0
-		end                
-	end
+	profiler:profile('build voronoi ', function()			
+		corners, edges, centers, adjacencies = vd.voronoi(points)
+	end) -- profile
+
+	profiler:profile('build graph', function()		
+		gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
+	end) -- profile
 	
-	-- Polygon elevations are the average of their corners
-	assignPolygonElevations(gCenters)
+	profiler:profile('improve corners', function()					
+		vdgraph.improveCorners(gCorners, gEdges)	
+	end) -- profile
 	
-	-- Determine downslope paths.
-	calculateDownslopes(gCorners)
+	profiler:profile('assign corner elevations', function()			
+		-- Determine the elevations and water at Voronoi corners
+		assignCornerElevations(gCorners)
+	end) -- profile		
+
+	profiler:profile('assign ocean and coastland', function()			
+		-- Determine polygon and corner type: ocean, coast, land.
+		assignOceanCoastAndLand(gCorners, gCenters)
+	end) -- profile		
+
+	profiler:profile('redistribute elevations', function()				
+		-- Rescale elevations so that the highest is 1.0, and they're
+		-- distributed well. We want lower elevations to be more common
+		-- than higher elevations, in proportions approximately matching
+		-- concentric rings. That is, the lowest elevation is the
+		-- largest ring around the island, and therefore should more
+		-- land area than the highest elevation, which is the very
+		-- center of a perfectly circular island.
+		redistributeElevations(landCorners(gCorners))
+	end) -- profile		
+
+	profiler:profile('assign elevations to non-land corners', function()					
+		 -- Assign elevations to non-land corners
+		for _, q in pairs(gCorners) do
+			if q._ocean or q._coast then
+				q._elevation = 0.0
+			end                
+		end
+	end) -- profile		
+
+	profiler:profile('assign polygon elevations', function()						
+		-- Polygon elevations are the average of their corners
+		assignPolygonElevations(gCenters)
+	end) -- profile		
 	
-	-- Determine watersheds: for every corner, where does it flow
-    -- out into the ocean? 
-	calculateWatersheds(gCorners)
+	profiler:profile('calculate downslopes', function()							
+		-- Determine downslope paths.
+		calculateDownslopes(gCorners)
+	end) -- profile		
+
+	profiler:profile('calculate watersheds', function()								
+		-- Determine watersheds: for every corner, where does it flow
+		-- out into the ocean? 
+		calculateWatersheds(gCorners)
+	end) -- profile		
+
+	profiler:profile('create rivers', function()
+		-- Create rivers
+		createRivers(gCorners)
+	end) -- profile		
 	
-	-- Create rivers
-	createRivers(gCorners)
+	profiler:profile('determine moisture', function()	
+		-- Determine moisture at corners, starting at rivers
+		-- and lakes, but not oceans. Then redistribute
+		-- moisture to cover the entire range evenly from 0.0
+		-- to 1.0. Then assign polygon moisture as the average
+		-- of the corner moisture
+		assignCornerMoisture(gCorners)
+		redistributeMoisture(landCorners(gCorners))
+		assignPolygonMoisture(gCenters)
+	end) -- profile		
 	
-	-- Determine moisture at corners, starting at rivers
-	-- and lakes, but not oceans. Then redistribute
-	-- moisture to cover the entire range evenly from 0.0
-	-- to 1.0. Then assign polygon moisture as the average
-	-- of the corner moisture
-	assignCornerMoisture(gCorners)
-	redistributeMoisture(landCorners(gCorners))
-	assignPolygonMoisture(gCenters)
-	
-	-- assign biomes
-	assignBiomes(gCenters)
-	
-	-- assign teritories
-	assignTerritories(gCenters)
+	profiler:profile('assign biomes', function()
+		-- assign biomes
+		assignBiomes(gCenters)
+	end) -- profile		
+
+	profiler:profile('assign territories', function()		
+		-- assign teritories
+		assignTerritories(gCenters)
+	end) -- profile		
 end
 
 function love.load()	
+	profiler = objects.Profiler {}
+
 	buildMap()
 end
 
@@ -670,8 +713,16 @@ local biomeColors =
 		TROPICAL_SEASONAL_FOREST = { 140, 160, 80 },
 		SUBTROPICAL_DESERT = { 170, 170, 0 }
 	}
-function drawBiomes()
-	local sw, sh = love.graphics.getMode()	
+function drawBiomes(cnv)
+	local sw, sh 
+	
+	if cnv then
+		sw, sh = cnv:getWidth(), cnv:getHeight()
+		love.graphics.setCanvas(cnv)
+	else
+		sw, sh = love.graphics.getMode()	
+		love.graphics.setCanvas()
+	end
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 
@@ -1043,7 +1094,7 @@ function love.update(dt)
 	end	
 	
 	if NUM_POINTS < 100 then NUM_POINTS = 100 end	
-	if NUM_POINTS > 10000 then NUM_POINTS = 10000 end
+	if NUM_POINTS > 40000 then NUM_POINTS = 40000 end
 	
 	if love.keyboard.isDown('d') then
 		NUM_RIVERS = NUM_RIVERS + 50
@@ -1111,4 +1162,13 @@ function love.keyreleased(key)
 	if key == '4' then
 		drawMode = 'territories'
 	end			
+	if key == '0' then
+		log.log(' === PROFILE RESULTS === ')
+		for k, v in pairs(profiler:profiles()) do
+			log.log('----------------------------------------------------------------------')
+			log.log(k)
+			log.log(table.dump(v))
+			log.log('----------------------------------------------------------------------')
+		end
+	end
 end
