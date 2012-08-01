@@ -1,7 +1,7 @@
 require 'vd'
 require 'table_ext'
 
-points = vd.generatePoints{ count = 100 }
+points = vd.generatePoints{ seed = os.time(), count = 100 }
 corners, edges, centers, adjacencies = vd.voronoi(points)
 
 --[[
