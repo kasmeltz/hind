@@ -15,5 +15,5 @@ module('edge')
 --
 function _M:new(id)
 	self.__index = self    
-	return setmetatable({_id=id},self)
+	return setmetatable({_id=id,_river = 0},self)
 end

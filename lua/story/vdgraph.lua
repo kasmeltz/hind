@@ -105,7 +105,6 @@ function buildGraph(po, co, aj)
 		end
 		
 		local c = corner:new(#corners + 1, p)
-		c._river = 0
 		corners[#corners + 1] = c
 		cb[#cb+1] = c
 		cornerBuckets[p.x] = cb
@@ -120,7 +119,6 @@ function buildGraph(po, co, aj)
 		local p2 = point:new(po.x[a.p2], po.y[a.p2])
 		
 		local e = edge:new(#edges + 1)
-		e._river = 0
 		e._midpoint = point.mid(c1, c2)
 		
 		local v1 = makeCorner(c1)
