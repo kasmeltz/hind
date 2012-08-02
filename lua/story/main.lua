@@ -52,7 +52,7 @@ function improveRandomPoints(points)
 	]]
 	for i = 1, NUM_LLOYD_ITERATIONS do
 		-- generate voronoi values for the current points
-		local corners, _, centers = vd.voronoi(points)
+		local corners, centers = vd.voronoi(points)
 		
 		-- start with a whole new table of points
 		for k, v in pairs(points.x) do
@@ -668,7 +668,7 @@ end
 	
 function buildMap()
 	local points
-	local corners, edges, centers, adjacencies
+	local corners, centers, adjacencies
 
 	profiler:profile('make perlin noise', function()
 		makePerlin()
@@ -683,7 +683,7 @@ function buildMap()
 	end) -- profile		
 	
 	profiler:profile('build voronoi ', function()			
-		corners, edges, centers, adjacencies = vd.voronoi(points)
+		corners, centers, adjacencies = vd.voronoi(points)
 	end) -- profile
 
 	profiler:profile('build graph', function()		

@@ -65,6 +65,8 @@ function generatePoints(params)
 end
 
 function voronoi(points, params)	
+	local st = os.clock()
+	
 	local params = params or {}
 	
 	params.infilename = params.infilename or 'points.dat'	
@@ -74,14 +76,17 @@ function voronoi(points, params)
 	local qvoronoi_params = ''
 	for k, v in pairs(params) do
 		qvoronoi_params = qvoronoi_params .. v .. ' '
-	end
+	end	
 	
 	local file = assert(io.popen('qhull\\qvoronoi ' .. qvoronoi_params .. ' o'))
 	local output = file:read('*all')
 	file:close()
 	
+	print(os.clock()-st)
+	
+	local st = os.clock()
+	
 	local corners = { x = {}, y = {} }
-	local edges = { c1 = {}, c2 = {} }
 	
 	local lines = output:split('\n')
 	
@@ -111,15 +116,9 @@ function voronoi(points, params)
 		
 		local connections = lines[i]:split(' ')
 		for j = 2, #connections-1 do
-			edges.c1[#edges.c1 + 1] = tonumber(connections[j]) + 1
-			edges.c2[#edges.c2 + 1] = tonumber(connections[j + 1]) + 1
-			
 			points[#points+ 1] = tonumber(connections[j]) + 1
 		end
 
-		edges.c1[#edges.c1 + 1] = tonumber(connections[#connections]) + 1
-		edges.c2[#edges.c2 + 1] = tonumber(connections[2]) + 1
-		
 		points[#points + 1] = tonumber(connections[#connections]) + 1
 	end
 	
@@ -160,5 +159,8 @@ function voronoi(points, params)
 		centers[is2] = center		
 	end	
 
-	return corners, edges, centers, adjacencies
+	print(os.clock()-st)
+
+
+	return corners, centers, adjacencies
 end
