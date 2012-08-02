@@ -17,11 +17,9 @@ local EPS = 1e-12
 --  point constructor
 --
 function _M:new(x,y)
-	self.__index = self    
-	return setmetatable(
-		{ 	x = x, y = y, 
-			__tostring = function(p) return 'x: ' .. p.x..', y: '..p.y end 
-		}, self)
+	self.__index = self 
+	self.__tostring = 	function(p) return 'x: ' .. p.x..', y: '..p.y end 
+	return setmetatable({x=x,y=y}, self)
 end
 
 --
