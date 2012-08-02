@@ -235,12 +235,12 @@ function assignOceanCoastAndLand(corners, centers)
 end
 
 --
---	Create an array of corners that are on land only, for use by
+--	Create an array of polygons that are on land only, for use by
 --  algorithms that work only on land.  
 --
-function landCorners(corners)
+function landPolys(master)
 	local locations = {}
-	for _, c in pairs(corners) do
+	for _, c in pairs(master) do
 		if not c._ocean and not c._coast then
 			locations[#locations+1] = c
 		end
@@ -577,6 +577,40 @@ function assignTerritories(centers)
 end
 
 --
+--  Assigns biome groups so that neighbouring types of biomes
+--  can be easily referenced as part of one larger biome area
+--
+function assignBiomeGroups(centers)
+	local biomeGroup = 0	
+	
+	local queue = double_queue:new()
+	
+	local function addNeighbors(q)
+		for _, r in pairs(q._neighbors) do
+			if r._biome == q._biome and not r._biomeGroup then
+				queue:pushright(r)
+			end
+		end
+	end
+	
+	local biomeIncrement = 0
+	for _, q in pairs(centers) do
+		biomeIncrement = 0
+		if not q._biomeGroup then
+			q._biomeGroup = biomeGroup 
+			biomeIncrement = 1
+			addNeighbors(q)			
+		end	
+		while queue:count() > 0 do
+			local r = queue:popleft()
+			r._biomeGroup = biomeGroup
+			addNeighbors(r)			
+		end				
+		biomeGroup = biomeGroup + biomeIncrement
+	end	
+end
+
+--
 --	Helper function: build a single noisy line in a quadrilateral A-B-C-D,
 --	and store the output points in a table
 --
@@ -712,7 +746,7 @@ function buildMap()
 		-- largest ring around the island, and therefore should more
 		-- land area than the highest elevation, which is the very
 		-- center of a perfectly circular island.
-		redistributeElevations(landCorners(gCorners))
+		redistributeElevations(landPolys(gCorners))
 	end) -- profile		
 
 	profiler:profile('assign elevations to non-land corners', function()					
@@ -752,7 +786,7 @@ function buildMap()
 		-- to 1.0. Then assign polygon moisture as the average
 		-- of the corner moisture
 		assignCornerMoisture(gCorners)
-		redistributeMoisture(landCorners(gCorners))
+		redistributeMoisture(landPolys(gCorners))
 		assignPolygonMoisture(gCenters)
 	end) -- profile		
 	
@@ -761,6 +795,11 @@ function buildMap()
 		assignBiomes(gCenters)
 	end) -- profile		
 
+	profiler:profile('assign biome groups', function()
+		-- assign biome groups
+		assignBiomeGroups(landPolys(gCenters))
+	end) -- profile		
+	
 	profiler:profile('assign territories', function()		
 		-- assign teritories
 		assignTerritories(gCenters)
@@ -927,6 +966,23 @@ function drawBiomes(cnv)
 					y2 = y2 * sh
 					love.graphics.line(x1,y1,x2,y2)
 				end			
+			end		
+		end
+	end
+
+	for _, ed in pairs(gEdges) do
+		if ed._d1 and ed._d2 and ed._v1 and ed._v2 then		
+			if (ed._d1._biomeGroup or ed._d2._biomeGroup) and ed._d1._biomeGroup ~= ed._d2._biomeGroup then
+				love.graphics.setColor(0, 0, 0, 255)		
+				local x1 = ed._v1._point.x
+				local y1 = ed._v1._point.y
+				local x2 = ed._v2._point.x
+				local y2 = ed._v2._point.y
+				x1 = x1 * sw
+				y1 = y1 * sh
+				x2 = x2 * sw
+				y2 = y2 * sh
+				love.graphics.line(x1,y1,x2,y2)					
 			end		
 		end
 	end
