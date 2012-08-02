@@ -813,11 +813,25 @@ function buildMap()
 	logProfiles()	
 end
 
+local drawMode = 'biomes'
+
+function drawMap()
+	if drawMode == 'biomes' then
+		drawBiomes(mapCanvas)
+	elseif drawMode == 'elevation' then
+		drawElevation(mapCanvas)
+	elseif drawMode == 'moisture' then
+		drawMoisture(mapCanvas)
+	elseif drawMode == 'territories' then
+		drawTerritories(mapCanvas)
+	end			
+end
+
 function love.load()	
 	profiler = objects.Profiler {}
-	buildMap()
-	mapCanvas = love.graphics.newCanvas()
-	drawBiomes(mapCanvas)	
+	mapCanvas = love.graphics.newCanvas()	
+	buildMap()	
+	drawMap()
 end
 
 function plot2D(values)
@@ -828,8 +842,6 @@ function plot2D(values)
     end
   end
 end
-
-local drawMode = 'biomes'
 
 local biomeColors = 
 	{ 
@@ -1395,21 +1407,22 @@ function love.keyreleased(key)
 	
 	if key == 'o' then
 		buildMap()
+		drawMap()
 	end		
 	if key == '1' then
 		drawMode = 'biomes'
-		drawBiomes(mapCanvas)
+		drawMap()
 	end
 	if key == '2' then
 		drawMode = 'elevation'
-		drawElevation(mapCanvas)
+		drawMap()
 	end
 	if key == '3' then
 		drawMode = 'moisture'
-		drawMoisture(mapCanvas)
+		drawMap()		
 	end
 	if key == '4' then
 		drawMode = 'territories'
-		drawTerritories(mapCanvas)
+		drawMap()
 	end			
 end
