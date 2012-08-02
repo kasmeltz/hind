@@ -26,5 +26,6 @@ function _M:new(id,p)
 	o._touches = {}
 	o._protrudes = {}
 	o._adjacent = {}	
+	o._river = 0
 	return setmetatable(o,self)
 end
