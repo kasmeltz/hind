@@ -77,7 +77,7 @@ function voronoi(points, params)
 	end	
 	
 	local st = os.clock()
-	local file = assert(io.popen('qhull\\qvoronoi ' .. qvoronoi_params .. ' o'))
+	local file = assert(io.popen('story\\qhull\\qvoronoi ' .. qvoronoi_params .. ' o'))
 	local output = file:read('*all')
 	file:close()	
 	print('QHULL o:' .. os.clock()-st)
@@ -99,7 +99,7 @@ function voronoi(points, params)
 	print('PARSE QHULL o:' .. os.clock()-st)
 
 	local st = os.clock()	
-	local file = assert(io.popen('qhull\\qvoronoi ' .. qvoronoi_params .. ' Fv'))
+	local file = assert(io.popen('story\\qhull\\qvoronoi ' .. qvoronoi_params .. ' Fv'))
 	local output = file:read('*all')
 	file:close()
 	print('QHULL Fv:' .. os.clock()-st)

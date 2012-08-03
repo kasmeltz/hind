@@ -4,6 +4,8 @@
 	Created JUN-21-2012
 ]]
 
+package.path = package.path .. ';.\\story\\?.lua' 
+
 require 'profiler'
 require 'factories'
 require 'renderer'

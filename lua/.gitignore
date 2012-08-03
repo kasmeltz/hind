@@ -5,3 +5,7 @@ marshal.dll
 ### log files ###
 #################
 out.txt
+
+### DAT ###
+###########
+*.dat

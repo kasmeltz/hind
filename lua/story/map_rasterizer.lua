@@ -16,6 +16,8 @@ local pairs, math, io
 module('objects')
 
 MapRasterizer = Object{ _init = { '_map' } }
+
+local EMPTY_TILE = 0
 		
 --
 --  MapRasterizer constructor
@@ -27,24 +29,24 @@ function MapRasterizer:_clone(values)
 	
 	o._biomeMap = 
 	{
-		OCEAN = 0, 
-		LAKE = 1,
-		MARSH = 2,
-		ICE = 3,
-		BEACH = 4,
-		SNOW = 5,
-		TUNDRA = 6,
-		BARE = 7,
-		SCORCHED = 8,
-		TAIGA = 9,
-		SHRUBLAND = 10,
-		GRASSLAND = 11,
-		TEMPERATE_DESERT = 12,
-		TEMPERATE_DECIDUOUS_FOREST = 13,
-		TEMPERATE_RAIN_FOREST = 14,
-		TROPICAL_RAIN_FOREST = 15,
-		TROPICAL_SEASONAL_FOREST = 16,
-		SUBTROPICAL_DESERT = 17,
+		OCEAN = 0,
+		LAKE = 0,
+		MARSH = 0,
+		ICE = 1,
+		BEACH = 1,
+		SNOW = 1,
+		TUNDRA = 1,
+		BARE = 1,
+		SCORCHED = 6,
+		TAIGA = 2,
+		SHRUBLAND = 4,
+		GRASSLAND = 5,
+		TEMPERATE_DESERT = 6,
+		TEMPERATE_DECIDUOUS_FOREST = 2,
+		TEMPERATE_RAIN_FOREST = 3,
+		TROPICAL_RAIN_FOREST = 3,
+		TROPICAL_SEASONAL_FOREST = 3,
+		SUBTROPICAL_DESERT = 6
 	}
 	
 	return o
@@ -102,7 +104,7 @@ function MapRasterizer:fillCell(pt,value)
 	
 	while #q>0 do
 		local pt = table.remove(q)
-		if m[pt.y][pt.x] == 0 then
+		if m[pt.y][pt.x] == EMPTY_TILE then
 			m[pt.y][pt.x] = value
 			
 			if pt.x > 1 then -- west
@@ -156,7 +158,7 @@ function MapRasterizer:rasterizeCell(cell, origSize, size)
 		cell._point.x <= self._origSize.x and 
 		cell._point.y <= self._origSize.y then
 		local r = self:convertPoint(cell._point)
-		self:fillCell(r,self._biomeMap[cell._biome])
+		--self:fillCell(r,self._biomeMap[cell._biome])
 	end
 end
 
@@ -174,7 +176,7 @@ function MapRasterizer:rasterize(origSize, newSize)
 		for y = 1, self._newSize.y do
 			self._tiles[y] = {}
 			for x = 1, self._newSize.x do
-				self._tiles[y][x] = 0
+				self._tiles[y][x] = EMPTY_TILE
 			end
 		end
 		
@@ -186,8 +188,6 @@ function MapRasterizer:rasterize(origSize, newSize)
 	end) -- profile
 	
 	self:logProfiles()	
-	
-	self:saveMap('damap.txt')
 end
 
 local tileTypes = 
@@ -199,7 +199,6 @@ local tileTypes =
 		'&', '#', '!', '(', 
 		')', '<', '>', '?'
 	}
-
 --
 --	Save the map to a file
 --

@@ -13,7 +13,7 @@ require 'map_rasterizer'
 
 local showPerlin = 0
 local NUM_LLOYD = 2	
-local NUM_POINTS = 2000
+local NUM_POINTS = 10000
 local islandFactor = 0.8
 local landMass = 6
 local biomeFeatures = 2.5
