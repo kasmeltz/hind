@@ -96,7 +96,7 @@ function World:initialize()
 	
 	self._terrainGenerator = factories.createTerrainGenerator('outdoor')		
 	self._terrainGenerator:generate(499872,499872,256,256,'Sir Gallahad')
-	--self._terrainGenerator:generate(500160,499648,256,256,'Sir Gallahad')
+	self._terrainGenerator:generate(500128,499872,256,256,'Sir Gallahad')
 	
 	self._map = factories.createMap('outdoor')	
 	self._map._profiler = self._profiler
