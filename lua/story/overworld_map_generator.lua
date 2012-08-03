@@ -4,30 +4,29 @@
 	Created AUG-02-2012
 ]]
 
+require 'perlin'
+require 'overworld_map'
+require 'profiler'
+
+local table				= require 'table_ext'
 local vd 				= require 'vd'
 local vdgraph 			= require 'vdgraph'
 local double_queue 		= require 'double_queue'
 local point				= require 'point'
 local log				= require 'log'
-
-require 'perlin'
-require 'overworld_map'
-require 'profiler'
-require 'table_ext'
-
-local Object = (require 'object').Object
+local Object 			= (require 'object').Object
 
 local perlin2D = perlin2D
 
-local pairs, table, math
-	= pairs, table, math
+local pairs, math
+	= pairs, math
 	
 module('objects')
 
 OverworldMapGenerator = Object{}
 		
 --
---  OverworldMapGenerator
+--  OverworldMapGenerator constructor
 --
 function OverworldMapGenerator:_clone(values)
 	local o = Object._clone(self,values)
@@ -566,7 +565,7 @@ function OverworldMapGenerator:assignTerritories(centers)
 		local canContinue
 		local q
 		repeat			
-			q = centers[math.floor(math.random() * #centers)]
+			q = centers[math.floor(math.random() * #centers + 1)]
 			canContinue = isEmpty(q)
 			if q._ocean then canContinue = false end
 		until canContinue
@@ -746,7 +745,7 @@ function OverworldMapGenerator:buildMap()
 end
 
 function OverworldMapGenerator:logProfiles()
-	log.log(' === PROFILE RESULTS === ')
+	log.log(' === OVERWORLD MAP GENERATOR PROFILE RESULTS === ')
 	for k, v in pairs(self._profiler:profiles()) do
 		log.log('----------------------------------------------------------------------')
 		log.log(k)
