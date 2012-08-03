@@ -130,11 +130,14 @@ end
 --  Converts a point from old coordinates to new
 --
 function MapRasterizer:convertPoint(p)
-	local x = math.floor(p.x / self._origSize.x * self._newSize.x) + 1
-	x = math.min(self._newSize.x, x)
-	local y = math.floor(p.y / self._origSize.y * self._newSize.y) + 1
-	y = math.min(self._newSize.y, y)
-	return point:new(x,y)
+	if  p.x >= 0 and p.y >= 0 and 
+		p.x <= self._origSize.x and p.y <= self._origSize.y then
+		local x = math.floor(p.x / self._origSize.x * self._newSize.x) + 1
+		x = math.min(self._newSize.x, x)
+		local y = math.floor(p.y / self._origSize.y * self._newSize.y) + 1
+		y = math.min(self._newSize.y, y)
+		return point:new(x,y)
+	end
 end
 
 --
@@ -143,21 +146,16 @@ end
 function MapRasterizer:rasterizeCell(cell, origSize, size)
 	-- get all of the edges for this cell
 	for _, e in pairs(cell._borders) do
-		if e._v1._point.x >= 0 and e._v1._point.y >= 0 and
-			e._v1._point.x <= self._origSize.x and 
-			e._v1._point.y <= self._origSize.y and
-			e._v2._point.x >= 0 and e._v2._point.y >= 0 and
-			e._v2._point.x <= self._origSize.x and 
-			e._v2._point.y <= self._origSize.y then
+		if e._v1 and e._v2 then
 			local r1 = self:convertPoint(e._v1._point)
 			local r2 = self:convertPoint(e._v2._point)
-			self:drawEdge(r1,r2,self._biomeMap[cell._biome])
+			if r1 and r2 then
+				self:drawEdge(r1,r2,self._biomeMap[cell._biome])
+			end
 		end
 	end
-	if cell._point.x >= 0 and cell._point.y >= 0 and
-		cell._point.x <= self._origSize.x and 
-		cell._point.y <= self._origSize.y then
-		local r = self:convertPoint(cell._point)
+	local r = self:convertPoint(cell._point)
+	if r then
 		self:fillCell(r,self._biomeMap[cell._biome])
 	end
 end

@@ -253,21 +253,23 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 			tiles[1][y][x] = 11+(18*tileValue)
 		end
 	end
-		
+
 	-- assign area names
 	for y = 1, sy do
 		for x = 1, sx do
-			if y <= sy / 2 and x <= sx / 2 then
-				areas[y][x] = 'Upper Left'
-			elseif y <= sy / 2 and x > sx / 2 then
-				areas[y][x] = 'Upper Right'
-			elseif y > sy / 2 and x <= sx / 2 then
-				areas[y][x] = 'Lower Left'
-			elseif y > sy / 2 and x > sx / 2 then
-				areas[y][x] = 'Lower Right'
-			end				
+			areas[y][x] = ' '
 		end
-	end			
+	end		
+	for _, c in pairs(map._centers) do
+		local r = mapRasterizer:convertPoint(c._point)
+		if r then
+			if c._biomeGroup then
+				areas[r.y][r.x] = c._biome .. ' #' .. c._biomeGroup
+			else
+				areas[r.y][r.x] = c._biome
+			end			
+		end
+	end
 	
 	-- generate tile transitions
 	self:transitions(tiles)

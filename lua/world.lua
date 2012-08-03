@@ -95,8 +95,8 @@ function World:initialize()
 	self._camera:viewport(0,0,width,height)
 	
 	self._terrainGenerator = factories.createTerrainGenerator('outdoor')		
-	self._terrainGenerator:generate(499904,499904,256,256,'Sir Gallahad')
-	self._terrainGenerator:generate(500160,499904,256,256,'Sir Gallahad')
+	self._terrainGenerator:generate(499648,499648,512,512,'Sir Gallahad')
+	--self._terrainGenerator:generate(500160,499648,256,256,'Sir Gallahad')
 	
 	self._map = factories.createMap('outdoor')	
 	self._map._profiler = self._profiler
@@ -482,8 +482,8 @@ function World:createHero()
 	]]
 	
 	-- put the hero in the middle of the map for fun
-	local tileX = 500032
-	local tileY = 500032
+	local tileX = 499904
+	local tileY = 499904
 	local ts = self._map._tileSet:size()	
 	hero:position(tileX*ts[1], tileY*ts[2])
 	hero:update(0.16)
@@ -875,7 +875,8 @@ function World:update(dt)
 	local hash = Map.hash(x,y)
 	local cell = self._map._cellsInMemory[hash]
 	
-	if cell and self._hero._currentArea ~= cell._area then
+	log.log(cell.area)
+	if cell and cell.area ~= ' ' and self._hero._currentArea ~= cell._area then
 		self._hero._currentArea = cell._area
 		self:createEventText(cell._area)
 	end
