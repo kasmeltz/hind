@@ -13,7 +13,7 @@ require 'map_rasterizer'
 
 local showPerlin = 0
 local NUM_LLOYD = 2	
-local NUM_POINTS = 600
+local NUM_POINTS = 2000
 local islandFactor = 0.8
 local landMass = 6
 local biomeFeatures = 2.5
@@ -143,7 +143,7 @@ function love.load()
 	mapGenerator = objects.OverworldMapGenerator{}	
 	buildMap()
 	mapRasterizer = objects.MapRasterizer{ map }
-	mapRasterizer:rasterize(2000,2000)
+	mapRasterizer:rasterize(point:new(1,1), point:new(512,512))
 	drawMap()
 end
 
@@ -151,7 +151,11 @@ function plot2D(values)
   for r = 1, #values do
     for c = 1, #(values[1]) do
       love.graphics.setColor(128 + 40 * values[r][c], 128 + 40 * values[r][c], 128 + 40 * values[r][c], 255)
-      love.graphics.rectangle("fill", (c-1)/(#(values[1]))*love.graphics.getWidth(), (r-1)/(#values)*love.graphics.getHeight(), love.graphics.getWidth()/#(values[1]), love.graphics.getHeight()/#values)
+      love.graphics.rectangle("fill", 
+		(c-1)/(#(values[1]))*love.graphics.getWidth(), 
+		(r-1)/(#values)*love.graphics.getHeight(), 
+		love.graphics.getWidth()/#(values[1]), 
+		love.graphics.getHeight()/#values)
     end
   end
 end
