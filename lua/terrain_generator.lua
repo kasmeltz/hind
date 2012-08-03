@@ -4,15 +4,16 @@
 	Created JUN-21-2012
 ]]
 
-local terrain = require 'terrain'
+local point					= require 'point'
+local marshal 				= require 'marshal'
+local log 					= require 'log'
+local Object 				= (require 'object').Object
 
-local Object = (require 'object').Object
+require 'overworld_map_generator'
+require 'map_rasterizer'
 
-local marshal = require 'marshal'
-local log = require 'log'
-
-local pairs, ipairs, math, table, love, tostring
-	= pairs, ipairs, math, table, love, tostring
+local pairs, ipairs, math, table, love, tostring, os
+	= pairs, ipairs, math, table, love, tostring, os
 
 module('objects')
 
@@ -237,18 +238,21 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 		end
 	end
 	
-	
-	local map = terrain.generatemap(nil,sx,sy)	
-	
+	local mapGenerator = OverworldMapGenerator{}
+	mapGenerator:configure{ lloydCount = 2, pointCount = 2000,
+		lakeThreshold = 0.3, size = 1, riverCount = 1000,
+		factionCount = 6, seed = os.time(), islandFactor = 0.8,
+		landMass = 6, biomeFeatures = 2.5 }
+	local map = mapGenerator:buildMap()
+	local mapRasterizer = MapRasterizer{map}
+	mapRasterizer:rasterize(point:new(1,1), point:new(sx,sy))
+	 	
 	for y = 1,sy do
 		for x = 1,sx do
-			if map[y][x] > 0 then 
-				tiles[1][y][x] = 11 + (18*5)
-			else 
-				tiles[1][y][x] = 11
-			end
+			local tileValue = mapRasterizer._tiles[y][x]
+			tiles[1][y][x] = 11+(18*tileValue)
 		end
-	end	
+	end
 		
 	-- assign area names
 	for y = 1, sy do

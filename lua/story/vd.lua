@@ -10,7 +10,16 @@ require 'string_ext'
 
 local pairs, ipairs, io, os, assert, tonumber, math, print
 	= pairs, ipairs, io, os, assert, tonumber, math, print
-	
+
+-- @TODO how do I do this properly :-( ?
+-- besides not using a command line tool to 
+-- calculate the voronoi / delaunay diagrams :-) 
+local prefix = ''
+local current_dir = io.popen'cd':read'*l'	
+if not current_dir:find('story') then
+	prefix = '.\\story\\'
+end
+
 module(...)
 
 function savePoints(points, filename)
@@ -77,7 +86,7 @@ function voronoi(points, params)
 	end	
 	
 	local st = os.clock()
-	local file = assert(io.popen('story\\qhull\\qvoronoi ' .. qvoronoi_params .. ' o'))
+	local file = assert(io.popen(prefix .. 'qhull\\qvoronoi ' .. qvoronoi_params .. ' o'))
 	local output = file:read('*all')
 	file:close()	
 	print('QHULL o:' .. os.clock()-st)
@@ -99,7 +108,7 @@ function voronoi(points, params)
 	print('PARSE QHULL o:' .. os.clock()-st)
 
 	local st = os.clock()	
-	local file = assert(io.popen('story\\qhull\\qvoronoi ' .. qvoronoi_params .. ' Fv'))
+	local file = assert(io.popen(prefix .. 'qhull\\qvoronoi ' .. qvoronoi_params .. ' Fv'))
 	local output = file:read('*all')
 	file:close()
 	print('QHULL Fv:' .. os.clock()-st)
