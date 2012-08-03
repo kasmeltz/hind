@@ -30,8 +30,8 @@ function MapRasterizer:_clone(values)
 	o._biomeMap = 
 	{
 		OCEAN = 0,
-		LAKE = 0,
-		MARSH = 0,
+		LAKE = 3,
+		MARSH = 3,
 		ICE = 1,
 		BEACH = 1,
 		SNOW = 1,
@@ -158,7 +158,7 @@ function MapRasterizer:rasterizeCell(cell, origSize, size)
 		cell._point.x <= self._origSize.x and 
 		cell._point.y <= self._origSize.y then
 		local r = self:convertPoint(cell._point)
-		--self:fillCell(r,self._biomeMap[cell._biome])
+		self:fillCell(r,self._biomeMap[cell._biome])
 	end
 end
 

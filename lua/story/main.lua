@@ -13,7 +13,7 @@ require 'map_rasterizer'
 
 local showPerlin = 0
 local NUM_LLOYD = 2	
-local NUM_POINTS = 10000
+local NUM_POINTS = 2000
 local islandFactor = 0.8
 local landMass = 6
 local biomeFeatures = 2.5
@@ -143,7 +143,8 @@ function love.load()
 	mapGenerator = objects.OverworldMapGenerator{}	
 	buildMap()
 	mapRasterizer = objects.MapRasterizer{ map }
-	mapRasterizer:rasterize(point:new(1,1), point:new(512,512))
+	mapRasterizer:rasterize(point:new(1,1), point:new(256,256))
+	mapRasterizer:saveMap('daMap.txt')
 	drawMap()
 end
 
