@@ -875,7 +875,6 @@ function World:update(dt)
 	local hash = Map.hash(x,y)
 	local cell = self._map._cellsInMemory[hash]
 	
-	log.log(cell.area)
 	if cell and cell.area ~= ' ' and self._hero._currentArea ~= cell._area then
 		self._hero._currentArea = cell._area
 		self:createEventText(cell._area)
