@@ -6,609 +6,25 @@
 
 package.path = package.path .. ';..\\?.lua' 
 
-require 'profiler'
-require 'double_queue'
-require 'perlin'
-require 'vd'
-require 'vdgraph'
 require 'log'
-require 'table_ext'
 require 'point'
+require 'overworld_map_generator'
 
--- @TODO put this all into a map generator class
--- @todo make these adjustable?
-local NUM_LLOYD_ITERATIONS = 2
-local NUM_POINTS = 6000
-local LAKE_THRESHOLD = 0.3
-local SIZE = 1
-local NUM_RIVERS = 1000
-local NUM_FACTIONS = 6
-local seed = os.time()
-local islandFactor, landMass, biomeFeatures = 0.8, 6, 2.5
 local showPerlin = 0
-
+local NUM_LLOYD = 2	
+local NUM_POINTS = 600
+local islandFactor = 0.8
+local landMass = 6
+local biomeFeatures = 2.5
+local NUM_FACTIONS = 6
+local NUM_RIVERS = 1000
+local LAKE_THRESHOLD = 0.3
 local NOISY_LINE_TRADEOFF = 0.5
+local seed = os.time()
 
 local bigFont = love.graphics.newFont(48)
 local medFont = love.graphics.newFont(24)
 local smallFont = love.graphics.newFont(14)
-
---
---  Improve the random set of points with Lloyd Relaxation.
---
-function improveRandomPoints(points)
-	--[[
-	We'd really like to generate "blue noise". Algorithms:
-	1. Poisson dart throwing: check each new point against all
-	 existing points, and reject it if it's too close.
-	2. Start with a hexagonal grid and randomly perturb points.
-	3. Lloyd Relaxation: move each point to the centroid of the
-	 generated Voronoi polygon, then generate Voronoi again.
-	4. Use force-based layout algorithms to push points away.
-	5. More at http://www.cs.virginia.edu/~gfx/pubs/antimony/
-	Option 3 is implemented here. If it's run for too many iterations,
-	it will turn into a grid, but convergence is very slow, and we only
-	run it a few times.
-	]]
-	for i = 1, NUM_LLOYD_ITERATIONS do
-		-- generate voronoi values for the current points
-		local corners, centers = vd.voronoi(points)
-		
-		-- start with a whole new table of points
-		for k, v in pairs(points.x) do
-			points.x[k] = nil
-			points.y[k] = nil
-		end
-		
-		for _, center in pairs(centers) do
-			local px = 0
-			local py = 0
-			for k, v in pairs(center) do
-				local x = corners.x[k]
-				local y = corners.y[k]
-				px = px + x
-				py = py + y				
-			end				
-			
-			px = px / table.count(center)
-			py = py / table.count(center)
-
-			points.x[#points.x + 1] = px 
-			points.y[#points.y + 1] = py
-		end
-	end
-	
-	return points
-end
-	
-local perlin
-function makePerlin()
-	perlin = perlin2D(seed, 256, 256, islandFactor, landMass, biomeFeatures)
-end
-	
---
---  Returns true if the point is on land
---
-function islandShape(p)
-	local x = math.floor((p.x + 1) * 128)
-	local y = math.floor((p.y + 1) * 128)
-	x = math.min(x,256)	
-	y = math.min(y,256)
-	x = math.max(x,1)	
-	y = math.max(y,1)
-	
-	local c = (128 + 40 * perlin[y][x]) / 255	
-    return c > (0.3 + 0.3 * p:norm() * p:norm())
-end
-	
---
--- Determine whether a given point should be on the island or in the water.
---
-function inside(p)
-	return islandShape(point:new(2*(p.x / SIZE - 0.5), 2*(p.y / SIZE - 0.5)))
-end
-	
---
---	Determine elevations and water at Voronoi corners. By
---	construction, we have no local minima. This is important for
---	the downslope vectors later, which are used in the river
---	construction algorithm. Also by construction, inlets/bays
---	push low elevation areas inland, which means many rivers end
---	up flowing out through them. Also by construction, lakes
--- 	often end up on river paths because they don't raise the
---  elevation as much as other terrain does.
-function assignCornerElevations(corners)
-	local q = double_queue:new()
-	
-	for _, c in pairs(corners) do
-		c._water = not inside(c._point)
-	end
-  
-	for _, c in pairs(corners) do
-		if c._border then
-			c._elevation = 0
-			q:pushright(c)
-		else
-			c._elevation = math.huge
-		end
-	end
-
-	-- Traverse the graph and assign elevations to each point. As we
-	-- move away from the map border, increase the elevations. This
-	-- guarantees that rivers always have a way down to the coast by
-	-- going downhill (no local minima)
-	while q:count() > 0 do
-		local c = q:popleft()	
-		for _, s in pairs(c._adjacent) do
-			-- Every step up is epsilon over water or 1 over land. The
-			-- number doesn't matter because we'll rescale the
-			-- elevations later.
-			local newElevation = 0.01 + c._elevation
-			if not c._water and not s._water then
-				newElevation = newElevation + 1
-			end
-			-- If this point changed, we'll add it to the queue so
-			-- that we can process its neighbors too.
-			if newElevation < s._elevation then
-				s._elevation = newElevation
-				q:pushright(s)
-			end
-		end
-	end
-end
-
- --
- --	Determine polygon and corner types: ocean, coast, land.
- --
-function assignOceanCoastAndLand(corners, centers)
-	-- Compute polygon attributes 'ocean' and 'water' based on the
-	-- corner attributes. Count the water corners per
-	-- polygon. Oceans are all polygons connected to the edge of the
-	-- map. In the first pass, mark the edges of the map as ocean;
-	-- in the second pass, mark any water-containing polygon
-	-- connected an ocean as ocean.
-	local queue = double_queue:new()
-
-	local numWater
-	for _, p in pairs(centers) do
-		numWater = 0
-		for _, q in pairs(p._corners) do
-			if q._border then
-				p._border = true
-				p._ocean = true
-				q._water = true
-				queue:pushright(p)
-			end
-			if q._water then
-				numWater = numWater + 1
-			end
-		end
-		p._water = p._ocean or numWater >= table.count(p._corners) * LAKE_THRESHOLD
-	end
-	
-	while queue:count() > 0 do
-		local p = queue:popleft()
-		for _, r in pairs(p._neighbors) do
-			if r._water and not r._ocean then
-				r._ocean = true
-				queue:pushright(r)
-			end
-		end
-	end
-
-	-- Set the polygon attribute 'coast' based on its neighbors. If
-	-- it has at least one ocean and at least one land neighbor,
-	-- then this is a coastal polygon.
-	for _, p in pairs(centers) do
-		local numOcean = 0		  
-        local numLand = 0
-        for _, r in pairs(p._neighbors) do
-			if r._ocean then
-				numOcean = numOcean + 1
-			end
-			if not r._water then
-				numLand = numLand + 1
-			end
-		end
-		p._coast = numOcean > 0 and numLand > 0
-	end
-	
-	-- Set the corner attributes based on the computed polygon
-	-- attributes. If all polygons connected to this corner are
-	-- ocean, then it's ocean; if all are land, then it's land;
-	-- otherwise it's coast.
-	for _, q in pairs(corners) do
-		local numOcean = 0
-		local numLand = 0
-		for _, p in pairs(q._touches) do
-			if p._ocean then
-				numOcean = numOcean + 1
-			end
-			if not p._water then
-				numLand = numLand + 1
-			end
-		end		
-		q._ocean = numOcean == table.count(q._touches)
-		q._coast = numOcean > 0 and numLand > 0
-		q._water = q._border or (numLand ~= table.count(q._touches) and not q._coast)
-	end
-end
-
---
---	Create an array of polygons that are on land only, for use by
---  algorithms that work only on land.  
---
-function landPolys(master)
-	local locations = {}
-	for _, c in pairs(master) do
-		if not c._ocean and not c._coast then
-			locations[#locations+1] = c
-		end
-	end      
-	return locations
-end
-
---
--- 	Change the overall distribution of elevations so that lower
---	elevations are more common than higher
---	elevations. Specifically, we want elevation X to have frequency
---	(1-X).  To do this we will sort the corners, then set each
--- 	corner to its desired elevation.
-function redistributeElevations(locations)
-      -- SCALE_FACTOR increases the mountain area. At 1.0 the maximum
-      -- elevation barely shows up on the map, so we set it to 1.1
-      local SCALE_FACTOR = 1.1
-
-      table.sort(locations, function(a,b) return a._elevation < b._elevation end)
-	  
-      for i = 1, #locations do
-        -- Let y(x) be the total area that we want at elevation <= x.
-        -- We want the higher elevations to occur less than lower
-        -- ones, and set the area to be y(x) = 1 - (1-x)^2.
-        local y = i / #locations
-        -- Now we have to solve for x, given the known y.
-        --  *  y = 1 - (1-x)^2
-        --  *  y = 1 - (1 - 2x + x^2)
-        --  *  y = 2x - x^2
-        --  *  x^2 - 2x + y = 0
-        -- From this we can use the quadratic equation to get:
-        local x = math.sqrt(SCALE_FACTOR) - math.sqrt(SCALE_FACTOR*(1-y))
-        if x > 1.0 then 
-			x = 1.0
-		end
-        locations[i]._elevation = x
-      end
-end
-
---
---	Polygon elevations are the average of the elevations of their corners.
---
-function assignPolygonElevations(centers)
-	for _, p in pairs(centers) do
-		local sumElevation = 0.0
-        for _, q in pairs(p._corners) do
-			sumElevation = sumElevation + q._elevation
-		end
-		p._elevation = sumElevation / table.count(p._corners)
-   end
-end 
-
---
---  Calculate downslope pointers.  At every point, we point to the
--- 	point downstream from it, or to itself.  This is used for
---	generating rivers and watersheds.
---
-function calculateDownslopes(corners)
-	local r
-	for _, q in pairs(corners) do
-		r = q
-		for _, s in pairs(q._adjacent) do
-			if s._elevation <= r._elevation then
-				r = s
-			end
-		end
-		q._downslope = r
-	end
-end
-	
---	Calculate the watershed of every land point. The watershed is
---	the last downstream land point in the downslope graph. TODO:
---	watersheds are currently calculated on corners, but it'd be
---	more useful to compute them on polygon centers so that every
---	polygon can be marked as being in one watershed.
- function calculateWatersheds(corners)
-	-- Initially the watershed pointer points downslope one step.      
-	for _, q in pairs(corners) do
-		q._watershed = q
-		if not q._ocean and not q._coast then		  
-            q._watershed = q._downslope
-		end
-	end
-	
-	-- Follow the downslope pointers to the coast. Limit to 100
-	-- iterations although most of the time with NUM_POINTS=2000 it
-	-- only takes 20 iterations because most points are not far from
-	-- a coast.  TODO: can run faster by looking at
-	-- p.watershed.watershed instead of p.downslope.watershed.
-	for i = 1, 100 do
-		local changed = false
-		for _, q in pairs(corners) do
-			if not q._ocean and not q._coast and not q._watershed._coast then
-				local r = q._downslope._watershed
-				if not r._ocean then
-					q._watershed = r
-				end
-				changed = true
-			end
-		end
-		if not changed then break end
-	end
-	
-	-- How big is each watershed?
-	for _, q in pairs(corners) do
-		local r = q._watershed
-		r._watershed_size = 1 + (r._watershed_size or 0)
-	end
-end
-
-function lookupEdgeFromCorner(q, s)
-	for _, edge in pairs(q._protrudes) do
-		if edge._v1 == s or edge._v2 == s then
-			return edge		
-		end
-	end
-	return nil
-end
-	
---
---  Create rivers along edges. Pick a random corner point, then
---	move downslope. Mark the edges and corners as rivers.
---
-function createRivers(corners)      
-	-- @TODO how does this number affect things?
-	for i = 1, NUM_RIVERS do
-		local cn = math.floor(math.random() * #corners) + 1
-		local q = corners[cn]
-		if not q._ocean and q._elevation >= 0.3 and q._elevation <= 0.9 then
-			-- Bias rivers to go west: if q._downslope._point.x <= q._point.x then
-			while not q._coast do
-				if q == q._downslope then
-					break
-				end
-				local edge = lookupEdgeFromCorner(q, q._downslope)
-				edge._river = edge._river + 1
-				q._river = (q._river or 0) + 1
-				q._downslope._river = (q._downslope._river or 0) + 1 -- @TODO: fix double count
-				q = q._downslope
-			end
-		end
-	end
-end
-
---
---	Calculate moisture. Freshwater sources spread moisture: rivers
---	and lakes (not oceans). Saltwater sources have moisture but do
---	not spread it (we set it at the end, after propagation).
---
-function assignCornerMoisture(corners)
-	local queue = double_queue:new()
-      
-	-- Fresh water
-	for _, q in pairs(corners) do
-		if q._water or q._river > 0 and not q._ocean then
-			if q._river > 0 then
-				q._moisture = math.min(3.0, (0.2 * q._river))
-			else
-				q._moisture = 1.0
-			end
-			queue:pushright(q)
-		else
-			q._moisture = 0.0
-		end		
-	end
-		
-	while queue:count() > 0 do
-		local q = queue:popleft()
-		for _, r in pairs(q._adjacent) do
-			local newMoisture = q._moisture * 0.9
-			if newMoisture > r._moisture then
-				r._moisture = newMoisture
-				queue:pushright(r)
-			end
-		end
-	end
-	  
-	-- Salt water
-	for _, q in pairs(corners) do
-		if q._ocean or q._coast then
-			q._moisture = 1.0
-        end
-	end
-end
-
---
--- Change the overall distribution of moisture to be evenly distributed.
---
-function redistributeMoisture(locations)
-	table.sort(locations, function(a,b) return a._moisture < b._moisture end)
-	for i = 1, #locations do
-        locations[i]._moisture = i / #locations
-    end
-end
-
---
---	Polygon moisture is the average of the moisture at corners
---
-function assignPolygonMoisture(centers)
-	for _, p in pairs(centers) do
-		local sumMoisture = 0.0
-		for _, q in pairs(p._corners) do
-			if q._moisture > 1.0 then 
-				q._moisture = 1.0
-			end
-			sumMoisture = sumMoisture + q._moisture
-		end
-		p._moisture = sumMoisture / table.count(p._corners)
-	end
-end
-	
---
---  Assign a biome type to each polygon. If it has
---  ocean/coast/water, then that's the biome; otherwise it depends
---  on low/high elevation and low/medium/high moisture. This is
---  roughly based on the Whittaker diagram but adapted to fit the
---  needs of the island map generator.
---
---  @TODO If this were a continent generator, latitude might be a 
---	contributor to temperature. Also, wind, evaporation, and rain 
---	shadows might be useful for transporting moisture as humidity. 
---	However, for this generator we keep it simple. 
---
-function getBiome(p)
-	if p._ocean then return 'OCEAN'
-	elseif p._water then
-		if p._elevation < 0.1 then 
-			return 'MARSH'
-		elseif p._elevation > 0.8 then 
-			return 'ICE'
-		else 
-			return 'LAKE'
-		end
-	elseif p._coast then
-		return 'BEACH'
-	elseif p._elevation > 0.8 then
-		if p._moisture > 0.50 then 
-			return 'SNOW'
-		elseif p._moisture > 0.33 then 
-			return 'TUNDRA'
-		elseif p._moisture > 0.16 then 
-			return 'BARE'
-		else 
-			return 'SCORCHED'
-		end
-	elseif p._elevation > 0.6 then
-		if p._moisture > 0.66 then 
-			return 'TAIGA'
-		elseif p._moisture > 0.33 then 
-			return 'SHRUBLAND'
-		else 
-			return 'TEMPERATE_DESERT'
-		end
-	elseif p._elevation > 0.3 then
-		if p._moisture > 0.83 then 
-			return 'TEMPERATE_RAIN_FOREST'			
-		elseif p._moisture > 0.50 then 
-			return 'TEMPERATE_DECIDUOUS_FOREST'
-		elseif p._moisture > 0.16 then 
-			return 'GRASSLAND'
-		else 
-			return 'TEMPERATE_DESERT'
-		end
-	else 
-		if p._moisture > 0.66 then 
-			return 'TROPICAL_RAIN_FOREST'
-		elseif p._moisture > 0.33 then 
-			return 'TROPICAL_SEASONAL_FOREST'
-		elseif p._moisture > 0.16 then 
-			return 'GRASSLAND'
-		else 
-			return 'SUBTROPICAL_DESERT'
-		end			
-	end
-end
-	
---
---  Assigns biomes
---
-function assignBiomes(centers)
-	for _, p in pairs(centers) do	
-		p._biome = getBiome(p)
-	end
-end
-
---
---  Splis the map up into political territories
---	
-function assignTerritories(centers)
-	local queue = double_queue:new()
-	
-	local tCount = {}
-	local maxTerritories = NUM_POINTS / (NUM_FACTIONS*0.33)
-	
-	-- assign initial territories
-	local function isEmpty(q)
-		if q._territory then return false end
-		for _, r in pairs(q._neighbors) do
-			if r._territory then return false end
-		end
-		return true
-	end
-	
-	for i = 1, NUM_FACTIONS do
-		local canContinue
-		local q
-		repeat			
-			q = centers[math.floor(math.random() * #centers)]
-			canContinue = isEmpty(q)
-			if q._ocean then canContinue = false end
-		until canContinue
-		q._territory = i
-		tCount[i] = 1
-		queue:pushright(q)
-	end
-	
-	while queue:count() > 0 do
-		local q = queue:popleft()
-		-- attempt to occupy all neighbouring squares
-		if table.count(q._neighbors) > 0 then			
-			for _, n in pairs(q._neighbors) do
-				if not n._ocean then
-					if not n._territory then
-						n._territory = q._territory
-						tCount[q._territory] = tCount[q._territory] + 1 
-						if tCount[q._territory] < maxTerritories or queue:count() == 0 then
-							queue:pushright(n)
-						end
-					end
-				end
-			end
-		end		
-	end
-end
-
---
---  Assigns biome groups so that neighbouring types of biomes
---  can be easily referenced as part of one larger biome area
---
-function assignBiomeGroups(centers)
-	local biomeGroup = 0	
-	
-	local queue = double_queue:new()
-	
-	local function addNeighbors(q)
-		for _, r in pairs(q._neighbors) do
-			if r._biome == q._biome and not r._biomeGroup then
-				queue:pushright(r)
-			end
-		end
-	end
-	
-	local biomeIncrement = 0
-	for _, q in pairs(centers) do
-		biomeIncrement = 0
-		if not q._biomeGroup then
-			q._biomeGroup = biomeGroup 
-			biomeIncrement = 1
-			addNeighbors(q)			
-		end	
-		while queue:count() > 0 do
-			local r = queue:popleft()
-			r._biomeGroup = biomeGroup
-			addNeighbors(r)			
-		end				
-		biomeGroup = biomeGroup + biomeIncrement
-	end	
-end
 
 --
 --	Helper function: build a single noisy line in a quadrilateral A-B-C-D,
@@ -676,18 +92,18 @@ function buildNoisyEdges(centers)
 					r.x ~= math.huge and s.y ~= math.huge and
 					s.x ~= math.huge and s.y ~= math.huge then
 
-					local minLength = 100 / NUM_POINTS
+					local minLength = 100 / self._pointCount
 					if edge._d1._biome ~= edge._d2._biome then
-						minLength = 30 / NUM_POINTS
+						minLength = 30 / self._pointCount
 					end
 					if edge._d1._ocean and edge._d2._ocean then
-						minLength = 1000 / NUM_POINTS
+						minLength = 1000 / self._pointCount
 					end
 					if edge._d1._coast or edge._d2._coast then
-						minLength = 10 / NUM_POINTS
+						minLength = 10 / self._pointCount
 					end
 					if edge._river then --[[or lava.lava[edge.index])]]
-						minLength = 10 / NUM_POINTS
+						minLength = 10 / self._pointCount
 					end
 
 					path1[edge._id] = buildNoisyLineSegments(edge._v1._point, t, edge._midpoint, q, minLength)
@@ -700,121 +116,84 @@ function buildNoisyEdges(centers)
 	return path1, path2
 end
 	
-function buildMap()
-	local points
-	local corners, centers, adjacencies
-
-	profiler:profile('make perlin noise', function()
-		makePerlin()
-	end) -- profile
-
-	profiler:profile('generate points ', function()	
-		points = vd.generatePoints{ count = NUM_POINTS, seed = seed }	
-	end) -- profile
-
-	profiler:profile('improve random points ', function()		
-		points = improveRandomPoints(points)
-	end) -- profile		
+--
+-- 	Bresenham rasterizer
+--
+local function bresenham(p0,p1,m)
+	m[p0.y][p0.x] = 1
 	
-	profiler:profile('build voronoi ', function()			
-		corners, centers, adjacencies = vd.voronoi(points)
-	end) -- profile
-
-	profiler:profile('build graph', function()		
-		gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
-	end) -- profile
+	local dx = math.abs(p1.x-p0.x)
+	local dy = math.abs(p1.y-p0.y)
+	
+	local sx, sy
+	if p0.x < p1.x then sx=1 else sx=-1 end
+	if p0.y < p1.y then sy=1 else sy=-1 end
+	
+	local err = dx-dy
+	
+	while true do
+		m[p0.y][p0.x] = 1
 		
-	profiler:profile('improve corners', function()					
-		vdgraph.improveCorners(gCorners, gEdges)	
-	end) -- profile
-	
-	profiler:profile('assign corner elevations', function()			
-		-- Determine the elevations and water at Voronoi corners
-		assignCornerElevations(gCorners)
-	end) -- profile		
-
-	profiler:profile('assign ocean and coastland', function()			
-		-- Determine polygon and corner type: ocean, coast, land.
-		assignOceanCoastAndLand(gCorners, gCenters)
-	end) -- profile		
-
-	profiler:profile('redistribute elevations', function()				
-		-- Rescale elevations so that the highest is 1.0, and they're
-		-- distributed well. We want lower elevations to be more common
-		-- than higher elevations, in proportions approximately matching
-		-- concentric rings. That is, the lowest elevation is the
-		-- largest ring around the island, and therefore should more
-		-- land area than the highest elevation, which is the very
-		-- center of a perfectly circular island.
-		redistributeElevations(landPolys(gCorners))
-	end) -- profile		
-
-	profiler:profile('assign elevations to non-land corners', function()					
-		 -- Assign elevations to non-land corners
-		for _, q in pairs(gCorners) do
-			if q._ocean or q._coast then
-				q._elevation = 0.0
-			end                
+		if (p0.x == p1.x) and (p0.y == p1.y) then return end
+		
+		local e2 = 2*err
+		if e2 > -dy then
+			err = err-dy
+			p0.x = p0.x+sx
 		end
-	end) -- profile		
+		
+		if e2 < dx then
+			err = err+dx
+			p0.y = p0.y+sy
+		end
+	end
+end
 
-	profiler:profile('assign polygon elevations', function()						
-		-- Polygon elevations are the average of their corners
-		assignPolygonElevations(gCenters)
-	end) -- profile		
+--
+-- Simple flood fill. 
+--
+-- The 80s want this algorithm back. Uses a queue instead of being recursive.
+--
+-- Params
+--   m, a map (table of tables)
+--  pt, a p()-generated starting point
+--
+local function floodfill(m,pt)
+	local q = {}
 	
-	profiler:profile('calculate downslopes', function()							
-		-- Determine downslope paths.
-		calculateDownslopes(gCorners)
-	end) -- profile		
+	q[#q+1] = pt
+	
+	while #q>0 do
+		local pt = table.remove(q)
+		if m[pt.y][pt.x] == 0 then
+			m[pt.y][pt.x] = 1
+			
+			if pt.x > 1 then -- west
+				q[#q+1] = p(pt.x-1,pt.y)
+			end
+			
+			if pt.y > 1 then -- north
+				q[#q+1] = p(pt.x,pt.y-1)
+			end
+			
+			if pt.x < #m[pt.y] then -- east
+ 				q[#q+1] = p(pt.x+1,pt.y)
+			end
+			
+			if pt.y < #m then -- south
+				q[#q+1] = p(pt.x,pt.y+1)
+			end
+		end		
+	end
+end
 
-	profiler:profile('calculate watersheds', function()								
-		-- Determine watersheds: for every corner, where does it flow
-		-- out into the ocean? 
-		calculateWatersheds(gCorners)
-	end) -- profile		
-
-	profiler:profile('create rivers', function()
-		-- Create rivers
-		createRivers(gCorners)
-	end) -- profile		
-	
-	profiler:profile('determine moisture', function()	
-		-- Determine moisture at corners, starting at rivers
-		-- and lakes, but not oceans. Then redistribute
-		-- moisture to cover the entire range evenly from 0.0
-		-- to 1.0. Then assign polygon moisture as the average
-		-- of the corner moisture
-		assignCornerMoisture(gCorners)
-		redistributeMoisture(landPolys(gCorners))
-		assignPolygonMoisture(gCenters)
-	end) -- profile		
-	
-	profiler:profile('assign biomes', function()
-		-- assign biomes
-		assignBiomes(gCenters)
-	end) -- profile		
-
-	profiler:profile('assign biome groups', function()
-		-- assign biome groups
-		assignBiomeGroups(landPolys(gCenters))
-	end) -- profile		
-	
-	profiler:profile('assign territories', function()		
-		-- assign teritories
-		assignTerritories(gCenters)
-	end) -- profile		
-	
-	profiler:profile('build noisy edges', function()		
-		-- build noisy edges
-		--nEdges1, nEdges2 = buildNoisyEdges(gCenters)
-	end)
-	
-	logProfiles()	
+--
+--  Rasterizes the generated map to 2D tiles
+--
+function rasterize()
 end
 
 local drawMode = 'biomes'
-
 function drawMap()
 	if drawMode == 'biomes' then
 		drawBiomes(mapCanvas)
@@ -824,13 +203,21 @@ function drawMap()
 		drawMoisture(mapCanvas)
 	elseif drawMode == 'territories' then
 		drawTerritories(mapCanvas)
-	end			
+	end
+end
+
+function buildMap()
+	mapGenerator:configure{ lloydCount = NUM_LLOYD, pointCount = NUM_POINTS, 
+		lakeThreshold = LAKE_THRESHOLD, size = 1, riverCount = NUM_RIVERS, 
+		factionCount = NUM_FACTIONS, seed = seed, islandFactor = islandFactor, 
+		landMass = landMass, biomeFeatures = biomeFeatures}
+	map = mapGenerator:buildMap()
 end
 
 function love.load()	
-	profiler = objects.Profiler {}
 	mapCanvas = love.graphics.newCanvas()	
-	buildMap()	
+	mapGenerator = objects.OverworldMapGenerator{}	
+	buildMap()
 	drawMap()
 end
 
@@ -902,7 +289,7 @@ function drawBiomes(cnv)
 	love.graphics.setBackgroundColor(128,128,128)
 	love.graphics.clear()
 
-	for _, ce in pairs(gCenters) do
+	for _, ce in pairs(map._centers) do
 		local col = biomeColors[ce._biome]
 		if col then
 			love.graphics.setColor(col[1], col[2], col[3], 255)
@@ -958,7 +345,7 @@ function drawBiomes(cnv)
 	end
 	]]
 	
-	for _, ed in pairs(gEdges) do
+	for _, ed in pairs(map._edges) do
 		if ed._d1 and ed._d2 and (not ed._d1._water or not ed._d2._water) then
 			if ed._v1 and ed._v2 then		
 				if ed._river > 0 then
@@ -982,7 +369,7 @@ function drawBiomes(cnv)
 		end
 	end
 
-	for _, ed in pairs(gEdges) do
+	for _, ed in pairs(map._edges) do
 		if ed._d1 and ed._d2 and ed._v1 and ed._v2 then		
 			if (ed._d1._biomeGroup or ed._d2._biomeGroup) and ed._d1._biomeGroup ~= ed._d2._biomeGroup then
 				love.graphics.setColor(0, 0, 0, 255)		
@@ -1049,7 +436,7 @@ function drawTerritories(cnv)
 		tCounts[i] = 0
 	end
 
-	for _, ce in pairs(gCenters) do
+	for _, ce in pairs(map._centers) do
 		local col
 		local ter = ce._territory		
 		if ter then
@@ -1081,7 +468,7 @@ function drawTerritories(cnv)
 		end
 	end
 	
-	for _, ed in pairs(gEdges) do
+	for _, ed in pairs(map._edges) do
 		if ed._d1 and ed._d2 and ed._v1 and ed._v2 then		
 			if ed._d1._territory ~= ed._d2._territory then
 				love.graphics.setColor(0, 0, 0, 255)		
@@ -1126,7 +513,7 @@ function drawElevation(cnv)
 	love.graphics.clear()
 	
 	love.graphics.setColor(0,0,0,255)
-	for k, e in pairs(gEdges) do
+	for k, e in pairs(map._edges) do
 		if e._v1 and e._v2 then		
 			local elev = ((e._v1._elevation) + (e._v2._elevation)) / 2			
 			local r, g, b = 0, 255, 0
@@ -1159,7 +546,7 @@ function drawElevation(cnv)
 		end			
 	end
 	
-	for k, c in pairs(gCenters) do
+	for k, c in pairs(map._centers) do
 		local x = c._point.x
 		local y = c._point.y		
 		x = x * sw
@@ -1178,7 +565,7 @@ function drawElevation(cnv)
 		love.graphics.circle( 'fill', x, y, 2)
 	end		
 	
-	for k, c in pairs(gCorners) do
+	for k, c in pairs(map._corners) do
 		local x = c._point.x
 		local y = c._point.y		
 		x = x * sw
@@ -1215,7 +602,7 @@ function drawMoisture(cnv)
 	love.graphics.clear()
 	
 	love.graphics.setColor(0,0,0,255)
-	for k, e in pairs(gEdges) do
+	for k, e in pairs(map._edges) do
 		if e._v1 and e._v2 then		
 			local elev = ((e._v1._moisture) + (e._v2._moisture)) / 2			
 			local r, g, b = 0, 255, 0
@@ -1245,7 +632,7 @@ function drawMoisture(cnv)
 		end			
 	end
 	
-	for k, c in pairs(gCenters) do
+	for k, c in pairs(map._centers) do
 		local x = c._point.x
 		local y = c._point.y		
 		x = x * sw
@@ -1264,7 +651,7 @@ function drawMoisture(cnv)
 		love.graphics.circle( 'fill', x, y, 2)
 	end		
 	
-	for k, c in pairs(gCorners) do
+	for k, c in pairs(map._corners) do
 		local x = c._point.x
 		local y = c._point.y		
 		x = x * sw
@@ -1288,7 +675,7 @@ end
 
 function love.draw()
 	if showPerlin == 1 then 
-		plot2D(perlin)
+		plot2D(mapGenerator._perlin)
 		return
 	end
 	
@@ -1312,7 +699,6 @@ function love.draw()
 end
 
 function love.update(dt)
-
 	local updatePerlin = false
 	if love.keyboard.isDown('up') then
 		islandFactor = islandFactor + 0.05
@@ -1370,16 +756,6 @@ function love.update(dt)
 	if love.keyboard.isDown('b') then
 		seed = seed - 162837
 	end	
-end
-
-function logProfiles()
-	log.log(' === PROFILE RESULTS === ')
-	for k, v in pairs(profiler:profiles()) do
-		log.log('----------------------------------------------------------------------')
-		log.log(k)
-		log.log(table.dump(v))
-		log.log('----------------------------------------------------------------------')
-	end
 end
 
 function love.keyreleased(key)
