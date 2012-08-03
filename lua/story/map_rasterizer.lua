@@ -25,16 +25,38 @@ function MapRasterizer:_clone(values)
 			
 	o._profiler = Profiler{}
 	
+	o._biomeMap = 
+	{
+		OCEAN = 0, 
+		LAKE = 1,
+		MARSH = 2,
+		ICE = 3,
+		BEACH = 4,
+		SNOW = 5,
+		TUNDRA = 6,
+		BARE = 7,
+		SCORCHED = 8,
+		TAIGA = 9,
+		SHRUBLAND = 10,
+		GRASSLAND = 11,
+		TEMPERATE_DESERT = 12,
+		TEMPERATE_DECIDUOUS_FOREST = 13,
+		TEMPERATE_RAIN_FOREST = 14,
+		TROPICAL_RAIN_FOREST = 15,
+		TROPICAL_SEASONAL_FOREST = 16,
+		SUBTROPICAL_DESERT = 17,
+	}
+	
 	return o
 end
 
 --
--- 	Bresenham line algo
+-- 	Uses bresenham line algo
 --
-function MapRasterizer:bresenham(p0,p1)
+function MapRasterizer:drawEdge(p0,p1,value)
 	local m = self._tiles
 
-	m[p0.y][p0.x] = 1
+	m[p0.y][p0.x] = value
 	
 	local dx = math.abs(p1.x-p0.x)
 	local dy = math.abs(p1.y-p0.y)
@@ -46,7 +68,7 @@ function MapRasterizer:bresenham(p0,p1)
 	local err = dx-dy
 	
 	while true do
-		m[p0.y][p0.x] = 1
+		m[p0.y][p0.x] = value
 		
 		if (p0.x == p1.x) and (p0.y == p1.y) then return end
 		
@@ -72,7 +94,7 @@ end
 --   m, a map (table of tables)
 --  pt, a p()-generated starting point
 --
-function MapRasterizer:floodfill(pt)
+function MapRasterizer:fillCell(pt,value)
 	local m = self._tiles
 	local q = double_queue:new()
 	
@@ -81,7 +103,7 @@ function MapRasterizer:floodfill(pt)
 	while #q>0 do
 		local pt = table.remove(q)
 		if m[pt.y][pt.x] == 0 then
-			m[pt.y][pt.x] = 1
+			m[pt.y][pt.x] = value
 			
 			if pt.x > 1 then -- west
 				q[#q+1] = point:new(pt.x-1,pt.y)
@@ -127,14 +149,14 @@ function MapRasterizer:rasterizeCell(cell, origSize, size)
 			e._v2._point.y <= self._origSize.y then
 			local r1 = self:convertPoint(e._v1._point)
 			local r2 = self:convertPoint(e._v2._point)
-			self:bresenham(r1,r2)
+			self:drawEdge(r1,r2,self._biomeMap[cell._biome])
 		end
 	end
 	if cell._point.x >= 0 and cell._point.y >= 0 and
 		cell._point.x <= self._origSize.x and 
 		cell._point.y <= self._origSize.y then
 		local r = self:convertPoint(cell._point)
-		self:floodfill(r)
+		self:fillCell(r,self._biomeMap[cell._biome])
 	end
 end
 
@@ -168,6 +190,16 @@ function MapRasterizer:rasterize(origSize, newSize)
 	self:saveMap('damap.txt')
 end
 
+local tileTypes = 
+	{
+		' ', '*', '=', '+',
+		'-', '@', 'P', 'Q', 
+		'_', 'X', '.', ',', 
+		'/', '\\', '"', '^', 
+		'&', '#', '!', '(', 
+		')', '<', '>', '?'
+	}
+
 --
 --	Save the map to a file
 --
@@ -177,11 +209,7 @@ function MapRasterizer:saveMap(filename)
 	local f = io.open(filename,'w')
 	for i=1,#m do
 		for j =1,#m[i] do
-			if m[i][j] >0 then 
-				f:write('*')
-			else 
-				f:write(' ')
-			end
+			f:write(tileTypes[m[i][j]+1])
 		end
 		f:write('\n')
 	end
