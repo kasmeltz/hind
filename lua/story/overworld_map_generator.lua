@@ -614,17 +614,17 @@ function OverworldMapGenerator:assignBiomeGroups(centers)
 	for _, q in pairs(centers) do
 		biomeIncrement = 0
 		if not q._biomeGroup then
-			q._biomeGroup = biomeGroup 
+			q._biomeGroup = biomeGroup
 			biomeIncrement = 1
-			addNeighbors(q)			
-		end	
+			addNeighbors(q)
+		end
 		while queue:count() > 0 do
 			local r = queue:popleft()
 			r._biomeGroup = biomeGroup
-			addNeighbors(r)			
-		end				
+			addNeighbors(r)
+		end
 		biomeGroup = biomeGroup + biomeIncrement
-	end	
+	end
 end
 
 --
@@ -634,43 +634,55 @@ end
 function OverworldMapGenerator:buildMap()
 	local profiler = self._profiler
 	
+	log.log('===============================================================')
+	log.log('Generating overworld map')
+	
 	local points, corners, centers, adjacencies
 	local gCenters, gCorners, gEdges
 
+	log.log('Making perlin noise...')
 	profiler:profile('make perlin noise', function()
 		self:makePerlin()
 	end) -- profile
 
+	log.log('Generating random points...')
 	profiler:profile('generate points ', function()	
 		points = vd.generatePoints{ count = self._pointCount, seed = self._seed }	
 	end) -- profile
 
+	log.log('Improving random points...')
 	profiler:profile('improve random points ', function()		
 		points = self:improveRandomPoints(points)
 	end) -- profile		
 	
+	log.log('Building vornoi...')
 	profiler:profile('build voronoi ', function()			
 		corners, centers, adjacencies = vd.voronoi(points)
 	end) -- profile
 
+	log.log('Building graph...')
 	profiler:profile('build graph', function()		
 		gCenters, gCorners, gEdges = vdgraph.buildGraph(points, corners, adjacencies)
 	end) -- profile
 		
+	log.log('Improving corners...')
 	profiler:profile('improve corners', function()					
 		vdgraph.improveCorners(gCorners, gEdges)	
 	end) -- profile
 	
+	log.log('Assigning corner elevations...')
 	profiler:profile('assign corner elevations', function()			
 		-- Determine the elevations and water at Voronoi corners
 		self:assignCornerElevations(gCorners)
 	end) -- profile		
 
+	log.log('Assigning ocean and coastland...')
 	profiler:profile('assign ocean and coastland', function()			
 		-- Determine polygon and corner type: ocean, coast, land.
 		self:assignOceanCoastAndLand(gCorners, gCenters)
 	end) -- profile		
 
+	log.log('Redistributing elevation...')
 	profiler:profile('redistribute elevations', function()				
 		-- Rescale elevations so that the highest is 1.0, and they're
 		-- distributed well. We want lower elevations to be more common
@@ -682,6 +694,7 @@ function OverworldMapGenerator:buildMap()
 		self:redistributeElevations(self:landPolys(gCorners))
 	end) -- profile		
 
+	log.log('Assigning elevation to non land corners...')
 	profiler:profile('assign elevations to non-land corners', function()					
 		 -- Assign elevations to non-land corners
 		for _, q in pairs(gCorners) do
@@ -691,27 +704,32 @@ function OverworldMapGenerator:buildMap()
 		end
 	end) -- profile		
 
+	log.log('Assigning polygon elevations...')
 	profiler:profile('assign polygon elevations', function()						
 		-- Polygon elevations are the average of their corners
 		self:assignPolygonElevations(gCenters)
 	end) -- profile		
 	
+	log.log('Calculating downslopes...')
 	profiler:profile('calculate downslopes', function()							
 		-- Determine downslope paths.
 		self:calculateDownslopes(gCorners)
 	end) -- profile		
 
+	log.log('Calculating watersheds...')
 	profiler:profile('calculate watersheds', function()								
 		-- Determine watersheds: for every corner, where does it flow
 		-- out into the ocean? 
 		self:calculateWatersheds(gCorners)
 	end) -- profile		
 
+	log.log('Creating rivers...')
 	profiler:profile('create rivers', function()
 		-- Create rivers
 		self:createRivers(gCorners)
 	end) -- profile		
 	
+	log.log('Determining moisture...')
 	profiler:profile('determine moisture', function()	
 		-- Determine moisture at corners, starting at rivers
 		-- and lakes, but not oceans. Then redistribute
@@ -723,20 +741,28 @@ function OverworldMapGenerator:buildMap()
 		self:assignPolygonMoisture(gCenters)
 	end) -- profile		
 	
-	profiler:profile('assign biomes', function()
+	log.log('Assigning biomes...')
+	profiler:profile('assign biomes', function()		
 		-- assign biomes
 		self:assignBiomes(gCenters)
 	end) -- profile		
 
+	--[[
+	log.log('Assigning biome groups...')
 	profiler:profile('assign biome groups', function()
 		-- assign biome groups
 		self:assignBiomeGroups(self:landPolys(gCenters))
-	end) -- profile		
+	end) -- profile
+	]]
 	
+	log.log('Assigning territories...')
 	profiler:profile('assign territories', function()		
 		-- assign teritories
 		self:assignTerritories(gCenters)
 	end) -- profile		
+
+	log.log('Overworld map generation complete')
+	log.log('===============================================================')
 	
 	self:logProfiles()	
 	

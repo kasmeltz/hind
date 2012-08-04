@@ -245,7 +245,7 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 		landMass = 6, biomeFeatures = 2.5 }
 	local map = mapGenerator:buildMap()
 	local mapRasterizer = MapRasterizer{map}
-	mapRasterizer:rasterize(point:new(1,1), point:new(sx,sy))
+	mapRasterizer:rasterize(point:new(0,0), point:new(1,1), point:new(sx,sy))
 	 	
 	for y = 1,sy do
 		for x = 1,sx do

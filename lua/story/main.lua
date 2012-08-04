@@ -12,8 +12,8 @@ require 'overworld_map_generator'
 require 'map_rasterizer'
 
 local showPerlin = 0
-local NUM_LLOYD = 2	
-local NUM_POINTS = 2000
+local NUM_LLOYD = 2
+local NUM_POINTS = 6000
 local islandFactor = 0.8
 local landMass = 6
 local biomeFeatures = 2.5
@@ -143,7 +143,7 @@ function love.load()
 	mapGenerator = objects.OverworldMapGenerator{}	
 	buildMap()
 	mapRasterizer = objects.MapRasterizer{ map }
-	mapRasterizer:rasterize(point:new(1,1), point:new(256,256))
+	mapRasterizer:rasterize(point:new(0.5,0.5), point:new(0.6,0.6), point:new(64,64))
 	mapRasterizer:saveMap('daMap.txt')
 	drawMap()
 end
@@ -302,7 +302,8 @@ function drawBiomes(cnv)
 
 	for _, ed in pairs(map._edges) do
 		if ed._d1 and ed._d2 and ed._v1 and ed._v2 then		
-			if (ed._d1._biomeGroup or ed._d2._biomeGroup) and ed._d1._biomeGroup ~= ed._d2._biomeGroup then
+			if (ed._d1._biomeGroup or ed._d2._biomeGroup) and 
+				ed._d1._biomeGroup ~= ed._d2._biomeGroup then
 				love.graphics.setColor(0, 0, 0, 255)		
 				local x1 = ed._v1._point.x
 				local y1 = ed._v1._point.y

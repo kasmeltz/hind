@@ -126,6 +126,31 @@ function buildGraph(po, co, aj)
 		local d1 = makeCenter(p1)
 		local d2 = makeCenter(p2)
 		
+		local minX, minY, maxX, maxY
+		if c1.x <= c2.x then
+			minX = c1.x
+			maxX = c2.x
+		else
+			minX = c2.x
+			maxX = c1.x
+		end
+		if c1.y <= c2.y then
+			minY = c1.y
+			maxY = c2.y
+		else
+			minY = c2.y
+			maxY = c1.y
+		end
+	
+		d1._minPoint.x = math.min(d1._minPoint.x, minX)
+		d1._minPoint.y = math.min(d1._minPoint.y, minY)
+		d1._maxPoint.x = math.min(d1._maxPoint.x, maxX)
+		d1._maxPoint.y = math.min(d1._maxPoint.y, maxY)
+		d2._minPoint.x = math.min(d2._minPoint.x, minX)
+		d2._minPoint.y = math.min(d2._minPoint.y, minY)
+		d2._maxPoint.x = math.min(d2._maxPoint.x, maxX)
+		d2._maxPoint.y = math.min(d2._maxPoint.y, maxY)
+		
 		d1._borders[e._id] = e 
 		d1._corners[v1._id] = v1
 		d1._corners[v2._id] = v2
