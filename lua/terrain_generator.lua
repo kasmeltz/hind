@@ -260,8 +260,9 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 			areas[y][x] = ' '
 		end
 	end		
+	--[[ @TODO need to figure out how to do this properly
 	for _, c in pairs(map._centers) do
-		local r = mapRasterizer:convertPoint(c._point)
+		local r = mapRasterizer:convertPoint(c._point.x, c._point.y)
 		if r then
 			if c._biomeGroup then
 				areas[r.y][r.x] = c._biome .. ' #' .. c._biomeGroup
@@ -270,6 +271,7 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 			end			
 		end
 	end
+	]]
 	
 	-- generate tile transitions
 	self:transitions(tiles)

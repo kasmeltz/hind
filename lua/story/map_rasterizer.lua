@@ -62,6 +62,8 @@ function MapRasterizer:liangBarskyClip(edgeLeft, edgeBottom, edgeRight, edgeTop,
     local xdelta = x1src - x0src
     local ydelta = y1src - y0src
     local p,q,r
+	
+	--@TODO could add trivial case here if that is mostly what we expect?
 
 	for edge = 0, 3 do
         if edge == 0 then 
@@ -136,7 +138,9 @@ function MapRasterizer:drawEdge(p0,p1,value)
 	while true do
 		m[p0y][p0x] = value
 		
-		if (p0x == p1x) and (p0y == p1y) then return end
+		if (p0x == p1x) and (p0y == p1y) then 
+			return p0x, p0y, p1x, p1y 
+		end
 		
 		local e2 = 2*err
 		if e2 > -dy then
@@ -152,6 +156,92 @@ function MapRasterizer:drawEdge(p0,p1,value)
 end
 
 --
+--  Scanline based flood fill
+--
+function MapRasterizer:floodFillScanline(x, y, width, height, value, diagonal)
+	local m = self._tiles
+	
+	if x < 1 or y < 1 or x > width or y > height then return end
+	
+	--@TODO I don't thnk we want diagonal fill
+	--local diagonal = diagonal or false
+	
+    local ranges = { { x, x, y, nil, true, true } }	
+	
+	-- @TODO REMOVE TEST TO SEE WHERE WE START FILLING
+    m[y][x] = value
+ 
+    while #ranges > 0 do
+        local r = table.remove(ranges)
+        local down = r[4] == true
+        local up = r[4] == false
+ 
+        -- extendLeft
+        local minX = r[1]
+        local y = r[3]
+        if r[5] then
+            while minX > 1 and m[y][minX - 1] == EMPTY_TILE do
+                minX = minX - 1
+				m[y][minX] = value
+            end
+        end
+        local maxX = r[2]
+        -- extendRight
+        if r[6] then
+            while maxX < width and m[y][maxX + 1] == EMPTY_TILE do
+                maxX = maxX + 1
+				m[y][maxX] = value
+            end
+        end
+ 
+		-- @TODO we don't want diagonal do we?
+        --if(diagonal) {
+            --// extend range looked at for next lines
+            --if(minX>0) minX&#8211;;
+            --if(maxX<width-1) maxX++;
+        --}		
+        --else {
+		-- extend range ignored from previous line
+		r[1] = r[1] - 1
+		r[2] = r[2] + 1
+        --}
+ 
+        local function addNextLine(newY, isNext, downwards) 
+            local rMinX = minX
+            local inRange = false
+            for x = minX, maxX do
+                -- skip testing, if testing previous line within previous range
+                local empty = (isNext or (x < r[1] or x > r[2])) and m[newY][x] == EMPTY_TILE
+                if not inRange and empty then
+                    rMinX = x
+                    inRange = true
+                elseif inRange and not empty then
+                    ranges[#ranges + 1] = { rMinX, x - 1, newY, downwards, rMinX == minX, false }
+                    inRange = false
+                end
+                if inRange then	
+					m[newY][x] = value
+                end
+                -- skip
+                if not isNext and x == r[1] then
+                    x = r[2]
+                end
+            end
+            if inRange then
+                ranges[#ranges + 1] = { rMinX, x - 1, newY, downwards, rMinX == minX, true }
+            end
+        end
+ 
+        if y < height then
+            addNextLine(y + 1, not up, true)
+		end
+        if y > 1 then
+            addNextLine(y - 1, not down, false)
+		end
+    end
+end
+
+--
 -- Simple flood fill. 
 --
 -- The 80s want this algorithm back. Uses a queue instead of being recursive.
@@ -160,31 +250,37 @@ end
 --   m, a map (table of tables)
 --  pt, a p()-generated starting point
 --
-function MapRasterizer:fillCell(pt,value)
+function MapRasterizer:fillCell(x, y, value)
 	local m = self._tiles
-	local q = double_queue:new()
+	local q = {}
 	
-	q[#q+1] = pt
+	q[#q+1] = x
+	q[#q+1] = y
 	
 	while #q>0 do
-		local pt = table.remove(q)
-		if m[pt.y][pt.x] == EMPTY_TILE then
-			m[pt.y][pt.x] = value
+		local x = table.remove(q)
+		local y = table.remove(q)
+		if m[y][x] == EMPTY_TILE then
+			m[y][x] = value
 			
-			if pt.x > 1 then -- west
-				q[#q+1] = point:new(pt.x-1,pt.y)
+			if x > 1 then -- west
+				q[#q+1] = x-1
+				q[#q+1] = y
 			end
 			
-			if pt.y > 1 then -- north
-				q[#q+1] = point:new(pt.x,pt.y-1)
+			if y > 1 then -- north
+				q[#q+1] = x
+				q[#q+1] = y-1
 			end
 			
-			if pt.x < self._newSize.x then -- east
- 				q[#q+1] = point:new(pt.x+1,pt.y)
+			if x < self._newSize.x then -- east
+ 				q[#q+1] = x+1
+				q[#q+1] = y
 			end
 			
-			if pt.y < self._newSize.y then -- south
-				q[#q+1] = point:new(pt.x,pt.y+1)
+			if y < self._newSize.y then -- south
+				q[#q+1] = x
+				q[#q+1] = y+1
 			end
 		end		
 	end
@@ -194,44 +290,57 @@ end
 --  Returns true if the point should be included in
 --	the rasterization
 -- 
-function MapRasterizer:includePoint(p)
-	return p.x >= self._origMin.x and p.x <= self._origMax.x and 
-		p.y >= self._origMin.y and p.y <= self._origMax.y
+function MapRasterizer:includePoint(x,y)
+	return x >= self._origMin.x and x <= self._origMax.x and 
+		y >= self._origMin.y and y <= self._origMax.y
 end
 
 --
 --  Converts a point from old coordinates to new
 --
-function MapRasterizer:convertPoint(p)
-	local x = p.x - self._origMin.x
-	local y = p.y - self._origMin.y
+function MapRasterizer:convertPoint(x, y)
+	local x = x - self._origMin.x
+	local y = y - self._origMin.y
 	local x = math.floor(x / self._origScale.x * self._newSize.x) + 1
-	x = math.min(self._newSize.x, x)
 	local y = math.floor(y / self._origScale.y * self._newSize.y) + 1
-	y = math.min(self._newSize.y, y)
 	return point:new(x,y)
 end
 
 --
 --  Rasterizes a cell of the map
 --
+--	@TODO make the lines less straight and more zig zaggy?
+--	if this is the appropriate place to do that?
+--
 function MapRasterizer:rasterizeCell(cell)
-	local profiler = self._profiler
-	
+	local profiler = self._profiler	
 	-- get all of the edges for this cell
 	for _, e in pairs(cell._borders) do
-		if self:includePoint(e._v1._point) or self:includePoint(e._v2._point) then
-			profiler:profile('drawing cell borders', function()
-				local r1 = self:convertPoint(e._v1._point)
-				local r2 = self:convertPoint(e._v2._point)
-				self:drawEdge(r1,r2,self._biomeMap[cell._biome])
-			end) -- profile
+		if self:includePoint(e._v1._point.x, e._v1._point.y) or 
+			self:includePoint(e._v2._point.x, e._v2._point.y) then
+			
+			local r1 = self:convertPoint(e._v1._point.x, e._v1._point.y)
+			local r2 = self:convertPoint(e._v2._point.x, e._v2._point.y)
+			local p0x, p0y, p1x, p1y = self:drawEdge(r1,r2,self._biomeMap[cell._biome])
+			
+			-- set the point to start filling
+			if self._pointsToFill[cell._id] == true and p0x then
+				local r =  self:convertPoint(cell._point.x, cell._point.y)
+				log.log('WE GOT HERE!!!!!!')
+				if p0x < r.x then 
+					p0x = p0x + 1 
+				elseif p0x > r.x then 
+					p0x = p0x - 1 				
+				end
+				if p0y < r.y then 
+					p0y = p0y + 1 
+				elseif p0y > r.y then 
+					p0y = p0y - 1 				
+				end				
+				self._pointsToFill[cell._id] = point:new(p0x, p0y)
+			end					
 		end
 	end
-	local r = self:convertPoint(cell._point)
-	profiler:profile('filling cell', function()				
-		self:fillCell(r,self._biomeMap[cell._biome])
-	end) -- profile	
 end
 
 --
@@ -258,16 +367,71 @@ function MapRasterizer:rasterize(origMin, origMax, newSize)
 		end	
 	end) -- profile
 	
-	for _, c in pairs(self._map._centers) do
-		if not c._ocean then
-			if self:includePoint(c._minPoint) or 
-				self:includePoint(c._maxPoint) then			
-				
-				self:rasterizeCell(c)			
+	-- @TODO find a way to make this part more efficient
+	-- 2d spatial hashing of polygon centers?
+	-- or something else?
+	self._cellsToInclude = {}	
+	self._pointsToFill = {}
+	profiler:profile('deciding what cells to rasterize', function()	
+		for _, c in pairs(self._map._centers) do
+			if not c._ocean then
+				if self:includePoint(c._point.x, c._point.y) then
+					self._cellsToInclude[c._id] = c
+					self._pointsToFill[c._id] = self:convertPoint(c._point.x, c._point.y)
+				elseif self:includePoint(c._minPoint.x, c._minPoint.y) then
+					self._cellsToInclude[c._id] = c
+					self._pointsToFill[c._id] = true
+				elseif self:includePoint(c._minPoint.x, c._maxPoint.y) then 
+					self._cellsToInclude[c._id] = c
+					self._pointsToFill[c._id] = true
+				elseif self:includePoint(c._maxPoint.x, c._minPoint.y) then
+					self._cellsToInclude[c._id] = c
+					self._pointsToFill[c._id] = true
+				elseif self:includePoint(c._maxPoint.x, c._maxPoint.y) then
+					self._cellsToInclude[c._id] = c
+					self._pointsToFill[c._id] = true
+				end				
 			end
 		end
-	end		
+	end) -- profile
+										
+	profiler:profile('drawing cell borders', function()	
+		for _, c in pairs(self._cellsToInclude) do
+			self:rasterizeCell(c)
+		end
+	end) -- profile
 		
+	self:saveMap('prefill.txt')
+	
+	profiler:profile('filling cells', function()			
+		for id, pt in pairs(self._pointsToFill) do
+			if pt ~= true then
+				local c = self._cellsToInclude[id]
+				--self:fillCell(pt.x, pt.y, self._biomeMap[c._biome])
+				self:floodFillScanline(pt.x, pt.y, 
+					self._newSize.x, self._newSize.y, self._biomeMap[c._biome])					
+			end
+		end
+	end) -- profile	
+
+	-- @todo remove test to see wtf is happening with filling
+	for id, pt in pairs(self._pointsToFill) do
+		local c = self._cellsToInclude[id]
+		local r
+		if self:includePoint(c._point.x, c._point.y) then
+			r = self:convertPoint(c._point.x, c._point.y)
+			--self._tiles[r.y][r.x] = 15
+		end
+		if pt ~= true then
+			if r and pt.x == r.x and pt.y == r.y then
+			else
+				--self._tiles[pt.y][pt.x] = 16
+			end
+		end	
+	end		
+				
+	self:saveMap('postfill.txt')
+	
 	log.log('Rasterizing map complete')	
 	log.log('==============================================')	
 	
@@ -277,10 +441,10 @@ end
 local tileTypes = 
 	{
 		' ', '*', '=', '+',
-		'-', '@', 'P', 'Q', 
-		'_', 'X', '.', ',', 
-		'/', '\\', '"', '^', 
-		'&', '#', '!', '(', 
+		'A', 'I', 'P', 'Q', 
+		'[', 'X', ']', 'L', 
+		'/', '"', '#', '@', 
+		'&', '\\', '!', '(', 
 		')', '<', '>', '?'
 	}
 --
