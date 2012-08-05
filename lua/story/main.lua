@@ -143,8 +143,8 @@ function love.load()
 	mapGenerator = objects.OverworldMapGenerator{}	
 	buildMap()
 	mapRasterizer = objects.MapRasterizer{ map }
-	mapRasterizer:rasterize(point:new(0.49,0.49), point:new(0.51,0.51), point:new(64,64))
-	--mapRasterizer:saveMap('daMap.txt')
+	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(4096,4096))
+	mapRasterizer:rasterize(point:new(1024,1024), point:new(32,32))
 	drawMap()
 end
 

@@ -245,7 +245,8 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 		landMass = 6, biomeFeatures = 2.5 }
 	local map = mapGenerator:buildMap()
 	local mapRasterizer = MapRasterizer{map}
-	mapRasterizer:rasterize(point:new(0,0), point:new(1,1), point:new(sx,sy))
+	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(sx,sy))
+	mapRasterizer:rasterize(point:new(0,0), point:new(sx,sy))
 	 	
 	for y = 1,sy do
 		for x = 1,sx do
@@ -262,7 +263,7 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 	end		
 	--[[ @TODO need to figure out how to do this properly
 	for _, c in pairs(map._centers) do
-		local r = mapRasterizer:convertPoint(c._point.x, c._point.y)
+		local r = mapRasterizer:convertPoint(c._point)
 		if r then
 			if c._biomeGroup then
 				areas[r.y][r.x] = c._biome .. ' #' .. c._biomeGroup
