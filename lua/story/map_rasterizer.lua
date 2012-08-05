@@ -94,14 +94,27 @@ function MapRasterizer:addCenterToBuckets(center)
 		end
 		self._buckets[hash][center._id] = center
 	end
+	
+	local minX, maxX, minY, maxY = 
+		math.huge, -math.huge, math.huge, -math.huge
+		
+	local function minMaxPoints(p)
+		if p.x < minX then minX = p.x end
+		if p.x > maxX then maxX = p.x end
+		if p.y < minY then minY = p.y end
+		if p.y > maxY then maxY = p.y end
+	end
 
-	local hash = self:hash(center._rasterPoint.x, center._rasterPoint.y)
-	addToBucket(hash)
 	for _, e in pairs(center._borders) do
-		local hash = self:hash(e._v1._rasterPoint.x, e._v1._rasterPoint.y)
-		addToBucket(hash)
-		local hash = self:hash(e._v2._rasterPoint.x, e._v2._rasterPoint.y)
-		addToBucket(hash)
+		minMaxPoints(e._v1._rasterPoint)
+		minMaxPoints(e._v2._rasterPoint)
+	end
+		
+	for y = minY, maxY, self._cellSize do
+		for x = minX, maxX, self._cellSize do
+			local hash = self:hash(x,y)
+			addToBucket(hash)
+		end
 	end
 end
 

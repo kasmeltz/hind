@@ -42,7 +42,7 @@ function test_simple_square()
 	
 	addFakeVertex(co, 0.15, 0.55)
 	addFakeVertex(co, 0.85, 0.55)
-	addFakeVertex(co, 0.3, 0.65)
+	addFakeVertex(co, 0.1, 0.65)
 	addFakeVertex(co, 0.8, 0.65)
 	addFakeVertex(co, 0.1, 0.4)
 	addFakeVertex(co, 0.9, 0.4)
