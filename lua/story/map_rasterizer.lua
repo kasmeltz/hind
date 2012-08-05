@@ -11,8 +11,10 @@ local table				= require 'table_ext'
 local point				= require 'point'
 local double_queue		= require 'double_queue'
 
-local pairs, math, io, collectgarbage
-	= pairs, math, io, collectgarbage
+local pairs, math, io, collectgarbage, print
+	= pairs, math, io, collectgarbage, print
+	
+require 'profiler'
 	
 module('objects')
 
@@ -76,8 +78,8 @@ end
 function MapRasterizer:convertPoint(p)
 	local x = p.x - self._origMin.x
 	local y = p.y - self._origMin.y
-	local x = math.floor(x / self._origSize.x * self._size.x) + 1
-	local y = math.floor(y / self._origSize.y * self._size.y) + 1
+	local x = math.floor(x / self._origSize.x * self._size.x)
+	local y = math.floor(y / self._origSize.y * self._size.y)
 	return point:new(x,y)
 end
 
@@ -138,14 +140,15 @@ function MapRasterizer:initialize(origMin, origSize, newSize)
 		-- store scaled values in original graph?		
 		-- rescale the centers and egdes
 		for _, c in pairs(self._map._centers) do
-			c._rasterPoint = self:convertPoint(c._point)
-			for _, e in pairs(c._borders) do
-				e._v1._rasterPoint = self:convertPoint(e._v1._point)
-				e._v2._rasterPoint = self:convertPoint(e._v2._point)
+			if not c._ocean then
+				c._rasterPoint = self:convertPoint(c._point)
+				for _, e in pairs(c._borders) do
+					e._v1._rasterPoint = self:convertPoint(e._v1._point)
+					e._v2._rasterPoint = self:convertPoint(e._v2._point)
+				end		
+				-- add the centers to the 2d spatial buckets		
+				self:addCenterToBuckets(c)
 			end
-		
-			-- add the centers to the 2d spatial buckets		
-			self:addCenterToBuckets(c)
 		end	
 	end) -- profile
 	
@@ -156,61 +159,6 @@ function MapRasterizer:initialize(origMin, origSize, newSize)
 	log.log('==============================================')
 end
 
---[[
-function MapRasterizer:liangBarskyClip(edgeLeft, edgeBottom, edgeRight, edgeTop, x0src, y0src, x1src, y1src)
-	local t0 = 0.0
-	local t1 = 1.0
-    local xdelta = x1src - x0src
-    local ydelta = y1src - y0src
-    local p,q,r
-	
-	--@TODO could add trivial case here if that is mostly what we expect?
-
-	for edge = 0, 3 do
-        if edge == 0 then 
-			p = -xdelta
-			q = -(edgeLeft - x0src)
-        elseif edge == 1 then
-			p = xdelta
-			q = (edgeRight - x0src)
-		elseif edge == 2 then
-			p = -ydelta
-			q = -(edgeBottom - y0src)
-		elseif edge == 3 then
-			p = ydelta
-			q = (edgeTop - y0src)
-		end
-			
-        r = q / p
-		-- Don't draw line at all. (parallel line outside)
-        if p == 0 and q < 0 then 			
-			return nil 
-		end 	
-
-        if p < 0 then
-			-- Don't draw line at all.
-            if r > t1 then 				
-				return nil			
-			-- Line is clipped!
-            elseif r > t0 then 			
-				t0 = r 
-			end           
-        elseif p > 0 then					
-			-- Don't draw line at all.
-            if r < t0 then
-				return nil			
-			-- Line is clipped!				
-            elseif r < t1 then			
-				t1 = r
-			end
-        end
-    end
-
-    return x0src + t0 * xdelta, y0src + t0 * ydelta, 
-		x0src + t1 * xdelta, y0src + t1 * ydelta
-end
-]]
-
 function MapRasterizer:liangBarskyClip(edgeLeft, edgeTop, edgeRight, edgeBottom, x0, y0, x1, y1)
 	local px = x1 - x0
 	local py = y1 - y0
@@ -218,8 +166,10 @@ function MapRasterizer:liangBarskyClip(edgeLeft, edgeTop, edgeRight, edgeBottom,
 	local t1 = 1
 	
 	local function pqClip(dp, dd)
-		if dp == 0 and dd < 0 then
-			return false
+		if dp == 0 then
+			if dd < 0 then
+				return false
+			end
 		else
 			local a = dd / dp
 			if dp < 0 then
@@ -262,7 +212,7 @@ end
 --
 -- 	Uses bresenham line algo
 --
-function MapRasterizer:drawEdge(x0,y0,x1,y1,value)
+function MapRasterizer:drawEdge(x0,y0,x1,y1,value,justClip)
 	local m = self._tiles
 
 	--log.log('Before clipping drawing edge from: ' .. x0 .. ', ' .. y0 .. ' to ' .. x1 .. ', ' .. y1)	
@@ -283,8 +233,12 @@ function MapRasterizer:drawEdge(x0,y0,x1,y1,value)
 	p1x = math.floor(p1x)
 	p1y = math.floor(p1y)
 	
-	--log.log('After int drawing edge from: ' .. p0x .. ', ' .. p0y .. ' to ' .. p1x .. ', ' .. p1y)	
+	--log.log('After int drawing edge from: ' .. p0x .. ', ' .. p0y .. ' to ' .. p1x .. ', ' .. p1y)		
 	
+	if justClip then return p0x, p0y, p1x, p1y end
+	
+	local sx = p0x
+	local sy = p0y
 	
 	local dx = math.abs(p1x-p0x)
 	local dy = math.abs(p1y-p0y)
@@ -299,7 +253,7 @@ function MapRasterizer:drawEdge(x0,y0,x1,y1,value)
 		m[p0y][p0x] = value
 		
 		if (p0x == p1x) and (p0y == p1y) then 
-			return p0x, p0y, p1x, p1y 
+			return sx, sy
 		end
 		
 		local e2 = 2*err
@@ -328,6 +282,10 @@ function MapRasterizer:fillCell(x, y, value)
 	local m = self._tiles
 	local q = {}
 	
+	if not x or not y or x < 1 or x > self._area.x or y < 1 or y > self._area.y then 
+		return 
+	end
+
 	q[#q+1] = x
 	q[#q+1] = y
 	
@@ -378,7 +336,7 @@ end
 function MapRasterizer:rasterizeCell(cell)
 	local profiler = self._profiler	
 	-- get all of the edges for this cell
-	for _, e in pairs(cell._borders) do
+	for _, e in pairs(cell._borders) do		
 		local x0 = e._v1._rasterPoint.x - self._location1.x
 		local y0 = e._v1._rasterPoint.y - self._location1.y
 		local x1 = e._v2._rasterPoint.x - self._location1.x
@@ -386,8 +344,8 @@ function MapRasterizer:rasterizeCell(cell)
 		
 		-- draw the edge and get the clipped values
 		local p0x, p0y, p1x, p1y = self:drawEdge(
-			x0,y0,x1,y1,self._biomeMap[cell._biome])
-			
+			x0,y0,x1,y1,self._biomeMap[cell._biome], self._edgesDrawn[e])
+				
 		-- set the point to start filling
 		if not self._pointsToFill[cell] and p0x then
 			if p0x < cell._rasterPoint.x - self._location1.x then 
@@ -407,7 +365,9 @@ function MapRasterizer:rasterizeCell(cell)
 			p0y = math.min(self._area.y,p0y)
 			
 			self._pointsToFill[cell] = point:new(p0x, p0y)
-		end			
+		end	
+		
+		self._edgesDrawn[e] = true
 	end
 end
 
@@ -436,12 +396,9 @@ function MapRasterizer:rasterize(location, area)
 		end	
 	end) -- profile
 		
-	-- will store the points to fill
-	self._pointsToFill = {}
-
-	-- figure out what cells to raster
+	-- figure out what buckets to raster
 	local bucketsToRaster = {}		
-	profiler:profile('deciding what cells to rasterize', function()	
+	profiler:profile('deciding what buckets to rasterasize', function()	
 		for y = location.y, location.y + area.y - 1, self._cellSize do
 			for x = location.x, location.x + area.x - 1, self._cellSize do			
 				local hash = self:hash(x,y)
@@ -449,50 +406,43 @@ function MapRasterizer:rasterize(location, area)
 			end
 		end
 	end) -- profile
-		
-	-- draw cell borders
-	log.log('Drawing cell borders...')
-	profiler:profile('drawing cell borders', function()	
+	
+	
+	-- will store the points to fill
+	self._pointsToFill = {}
+	self._cellsToRaster = {}
+	self._edgesDrawn = {}
+	
+	-- figure out what cells to raster	
+	profiler:profile('deciding what cells to rasterasize', function()	
 		for hash, bucket in pairs(bucketsToRaster) do			
 			for _, c in pairs(bucket) do
-				local r = point:new(c._rasterPoint.x, c._rasterPoint.y)
-				r.x = r.x - self._location1.x
-				r.y = r.y - self._location1.y
-				if r.x >= 1 and r.x <= self._area.x and r.y >= 1 and r.y <= self._area.y then
-					self._pointsToFill[c] = r
-				end
-				self:rasterizeCell(c)			
+				self._cellsToRaster[c._id] = c
 			end
 		end
 	end) -- profile
 	
-	--[[
-	-- @todo remove test to see wtf is happening with filling
-	for c, pt in pairs(self._pointsToFill) do
-		local r = c._rasterPoint
-		local x = r.x - self._location1.x
-		local y = r.y - self._location1.y
-		if x >= 1 and x <= self._area.x and y >=1 and y <= self._area.y then
-			self._tiles[y][x] = 15			
+	-- draw cell borders
+	log.log('Drawing cell borders...')
+	profiler:profile('drawing cell borders', function()	
+		for _, c in pairs(self._cellsToRaster) do
+			local r = point:new(c._rasterPoint.x, c._rasterPoint.y)
+			r.x = r.x - self._location1.x
+			r.y = r.y - self._location1.y
+			if r.x >= 1 and r.x <= self._area.x and r.y >= 1 and r.y <= self._area.y then
+				self._pointsToFill[c] = r
+			end
+			self:rasterizeCell(c)			
 		end
-		if pt.x ~= x and pt.y ~= y then
-			self._tiles[pt.y][pt.x] = 16
-		end			
-	end	
-		
-	self:saveMap('prefill.txt')
+	end) -- profile
 	
-	-- @todo remove test to see wtf is happening with filling
-	for c, pt in pairs(self._pointsToFill) do
-		self._tiles[pt.y][pt.x] = EMPTY_TILE
-	end	
-	]]
+	--self:saveMap('prefill.txt')
 	
 	-- fill cells
 	log.log('Filling cells...')
 	profiler:profile('filling cells', function()	
 		for c, pt in pairs(self._pointsToFill) do
-			--self:fillCell(pt.x, pt.y, self._biomeMap[c._biome])
+			self:fillCell(pt.x, pt.y, self._biomeMap[c._biome])
 		end
 	end) -- profile	
 
@@ -509,9 +459,9 @@ function MapRasterizer:rasterize(location, area)
 			self._tiles[pt.y][pt.x] = 16
 		end			
 	end
-	
-	self:saveMap('postfill.txt')	
 	]]
+	
+	--self:saveMap('postfill.txt')	
 	
 	log.log('Rasterizing map complete')	
 	log.log('==============================================')	
@@ -533,19 +483,31 @@ local tileTypes =
 tileTypes[EMPTY_TILE + 1] = ' ' 
 
 --
+--  Convert the rasterized map to a string
+--
+function MapRasterizer.__tostring(self)
+	local m = self._tiles
+	local s = {}
+	for i=1,self._area.y do
+		for j=1,self._area.x do
+			s[#s+1] = tileTypes[m[i][j]+1]
+		end
+		s[#s+1] = '\n'
+	end
+	-- get rid of last \n
+	s[#s] = nil
+	return table.concat(s, '')
+end
+
+--
 --	Save the map to a file
 --
 function MapRasterizer:saveMap(filename, m)
 	log.log('Saving map to "'..filename..'"')
-	local m = self._tiles
 	
+	local s = self.__tostring(self)	
 	local f = io.open(filename,'w')
-	for i=1,self._area.y do
-		for j =1,self._area.x do
-			f:write(tileTypes[m[i][j]+1])
-		end
-		f:write('\n')
-	end
+	f:write(s)
 	f:close()
 end
 

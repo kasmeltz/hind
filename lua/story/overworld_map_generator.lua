@@ -766,8 +766,7 @@ function OverworldMapGenerator:buildMap()
 	
 	self:logProfiles()	
 	
-	local generatedMap = OverworldMap{ gCenters, gCorners, gEdges }
-	return generatedMap
+	return OverworldMap{ gCenters, gCorners, gEdges }
 end
 
 function OverworldMapGenerator:logProfiles()
