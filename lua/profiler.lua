@@ -6,10 +6,17 @@
 
 local Object = (require 'object').Object
 
-local love, pairs, collectgarbage
-	= love, pairs, collectgarbage
+local love, pairs, collectgarbage, os
+	= love, pairs, collectgarbage, os
 
 module('objects')
+
+local timeFn
+if love then
+	timeFn = love.timer.getMicroTime
+else
+	timeFn = os.clock
+end
 
 Profiler = Object{}
 
@@ -30,9 +37,9 @@ end
 function Profiler:profile(p, fn)
 	-- profile the function
 	local b = collectgarbage('count')
-	local s = love.timer.getMicroTime()
+	local s = timeFn()
 	fn()
-	local d = love.timer.getMicroTime() - s
+	local d = timeFn() - s
 	local m = collectgarbage('count') - b
 		
 	if d > 0.02 then
