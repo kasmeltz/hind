@@ -483,8 +483,8 @@ function World:createHero()
 	-- put the hero in the middle of the map for fun
 	--local tileX = 500000
 	--local tileY = 500000
-	local tileX = 4096
-	local tileY = 4096
+	local tileX = 8192
+	local tileY = 8192
 	local ts = self._map._tileSet:size()	
 	hero:position(tileX*ts[1], tileY*ts[2])
 	hero:update(0.16)

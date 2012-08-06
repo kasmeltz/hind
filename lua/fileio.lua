@@ -26,7 +26,7 @@ local map
 local mapRasterizer 
 function makeMap()
 	mapGenerator = objects.OverworldMapGenerator{}
-	mapGenerator:configure{ lloydCount = 2, pointCount = 60000,
+	mapGenerator:configure{ lloydCount = 2, pointCount = 6000,
 		lakeThreshold = 0.3, size = 1, riverCount = 1000,
 		factionCount = 6, seed = os.time(), islandFactor = 0.8,
 		landMass = 6, biomeFeatures = 2.5 }
@@ -53,7 +53,7 @@ function makeMap()
 		TROPICAL_SEASONAL_FOREST = 16,
 		SUBTROPICAL_DESERT = 17
 	}	
-	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(8192,8192))
+	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(16384,16384))
 end
 
 --
