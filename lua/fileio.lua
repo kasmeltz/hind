@@ -26,7 +26,7 @@ local map
 local mapRasterizer 
 function makeMap()
 	mapGenerator = objects.OverworldMapGenerator{}
-	mapGenerator:configure{ lloydCount = 2, pointCount = 600000,
+	mapGenerator:configure{ lloydCount = 2, pointCount = 60000,
 		lakeThreshold = 0.3, size = 1, riverCount = 1000,
 		factionCount = 6, seed = os.time(), islandFactor = 0.8,
 		landMass = 6, biomeFeatures = 2.5 }
