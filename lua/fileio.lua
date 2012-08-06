@@ -395,8 +395,20 @@ function loadMapCell(hash)
 	log.log('Marshal encoding took ' .. love.timer.getMicroTime() - st)
 	
 	--log.log('tiles encoded')
+
+	area = ' '
 	
-	area = 'GRASSLAND'
+	if mapRasterizer._territory then 
+		area = 'Territory # ' .. mapRasterizer._territory .. '\n'
+	end
+	
+	if mapRasterizer._biome then
+		area = area .. mapRasterizer._biome .. '\n'
+	end
+	
+	if mapRasterizer._biomeGroup then
+		area = area .. '# ' .. mapRasterizer._biomeGroup
+	end		
 	
 	--[[
 	local f = io.open('map/' .. hash .. '.dat', 'rb')

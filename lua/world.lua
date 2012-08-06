@@ -26,14 +26,14 @@ local marshal = require 'marshal'
 
 local log = require 'log'
 
-local pairs, ipairs, type, table, math, tostring, tonumber, love, collectgarbage, string
-	= pairs, ipairs, type, table, math, tostring, tonumber, love, collectgarbage, string
+local pairs, ipairs, type, table, math, tostring, tonumber, love, collectgarbage, string, print
+	= pairs, ipairs, type, table, math, tostring, tonumber, love, collectgarbage, string, print
 			
 module('objects')
 
 World = Object{ _init = { '_profiler' } }
 
-World.hugeFont = love.graphics.newFont(100)
+World.hugeFont = love.graphics.newFont(72)
 World.largeFont = love.graphics.newFont(24)
 World.smallFont = love.graphics.newFont(12)
 World.saveActorsPerFrame = 1
@@ -78,8 +78,8 @@ function World:_clone(values)
 	local thread = love.thread.getThread('fileio')
 	o._communicator = ThreadCommunicator{ thread }
 	
-	o._eventText = nil
-
+	o._eventTexts = {}
+	
 	return o
 end
 
@@ -481,10 +481,9 @@ function World:createHero()
 	]]
 	
 	-- put the hero in the middle of the map for fun
-	--local tileX = 500000
-	--local tileY = 500000
 	local tileX = 8192
 	local tileY = 8192
+		
 	local ts = self._map._tileSet:size()	
 	hero:position(tileX*ts[1], tileY*ts[2])
 	hero:update(0.16)
@@ -665,23 +664,30 @@ function World:createEventText(text)
 	-- querying every time
 	local screenWidth, screenHeight = love.graphics.getMode()
 	
-	local textWidth = font:getWidth(text)
-	
-	if self._eventText then
-		self._eventText:on_expired()
+	for k, t in pairs(self._eventTexts) do
+		t:on_expired()
+		self._eventTexts[k] = nil
 	end
-	
-	self._eventText = factories.createFloatingText( text, World.hugeFont,
-		{ 255, 255, 255, 255}, 
-		{ (screenWidth / 2) - (textWidth / 2), 100},
-		{ 0, 0 }, 5, true)
 		
-	self._eventText.on_expired = function(ft)
-		self._floatingTexts[ft._id] = nil
-		self._eventText = nil
-	end
-	self._floatingTexts[#self._floatingTexts + 1] = self._eventText
-	self._eventText._id = #self._floatingTexts
+	local lines = text:split('\n')	
+	local textHeight = font:getHeight(text) 
+	local totalHeight = textHeight * #lines
+	local y = 150 - (totalHeight / 2)
+	for k, l in ipairs(lines) do
+		local textWidth = font:getWidth(l)
+		local ft = factories.createFloatingText( l, World.hugeFont,
+			{ 255, 255, 255, 255}, 
+			{ (screenWidth / 2) - (textWidth / 2), y},
+			{ 0, 0 }, 5, true)		
+		y = y + textHeight
+		ft.on_expired = function(ft)
+			self._floatingTexts[ft._id] = nil
+			self._eventTexts[ft._id] = nil		
+		end
+		ft._id = #self._floatingTexts + 1
+		self._floatingTexts[ft._id] = ft		
+		self._eventTexts[ft._id] = ft
+	end		
 end
 
 --
@@ -876,7 +882,7 @@ function World:update(dt)
 	local hash = Map.hash(x,y)
 	local cell = self._map._cellsInMemory[hash]
 	
-	if cell and cell.area and cell.area ~= ' ' and self._hero._currentArea ~= cell._area then
+	if cell and cell._area and cell._area ~= ' ' and self._hero._currentArea ~= cell._area then
 		self._hero._currentArea = cell._area
 		self:createEventText(cell._area)
 	end
