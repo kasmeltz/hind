@@ -22,6 +22,8 @@ local NUM_RIVERS = 1000
 local LAKE_THRESHOLD = 0.3
 local NOISY_LINE_TRADEOFF = 0.5
 local seed = os.time()
+local rasterX = 2048
+local rasterY = 2048
 
 local bigFont = love.graphics.newFont(48)
 local medFont = love.graphics.newFont(24)
@@ -144,7 +146,6 @@ function love.load()
 	buildMap()
 	mapRasterizer = objects.MapRasterizer{ map }
 	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(4096,4096))
-	mapRasterizer:rasterize(point:new(2048,2048), point:new(8,8))
 	drawMap()
 end
 
@@ -205,6 +206,28 @@ local biomeColors =
 		TROPICAL_RAIN_FOREST = { 50, 200, 50 },
 		TROPICAL_SEASONAL_FOREST = { 140, 160, 80 },
 		SUBTROPICAL_DESERT = { 170, 170, 0 }
+	}
+	
+local biomeNumbers =
+	{
+		{ 0, 20, 60 },
+		{ 0, 0, 200 },
+		{ 20, 30, 70 },
+		{ 170, 170, 255 },
+		{ 100, 100, 50 },
+		{ 220, 220, 255 },
+		{ 128, 128, 128 },
+		{ 64, 64, 64 },
+		{ 80, 80, 40 },
+		{ 0, 40, 0 },
+		{ 100, 100, 20 },
+		{ 0, 130, 0 },
+		{ 130, 130, 0},
+		{ 30, 80, 30} ,
+		{ 0, 80, 80 },		
+		{ 50, 200, 50 },
+		{ 140, 160, 80 },
+		{ 170, 170, 0 }
 	}
 	
 function drawBiomes(cnv)
@@ -335,9 +358,6 @@ function drawBiomes(cnv)
 			end		
 		end
 	end
-	
-	love.graphics.setColor(0,255,255,255)
-	love.graphics.rectangle('line', sw / 2, sh / 2, 8 / 4096 * sw, 8 / 4096 * sh)
 	
 	love.graphics.setCanvas()
 end
@@ -649,9 +669,29 @@ function love.draw()
 	love.graphics.print('seed (G-B): ' .. seed, 10, 230)
 	love.graphics.print('factions (H-N): ' .. NUM_FACTIONS, 10, 250)
 	love.graphics.print('rebuild map (O)', 10, 270)
+	
+	if mapRasterizer._area then
+		local sx = 900
+		local sy = 50
+		for y = 1, mapRasterizer._area.y do
+			sy = sy + 8
+			sx = 900
+			for x = 1, mapRasterizer._area.x do
+				local v = mapRasterizer._tiles[y][x]
+				local c = biomeNumbers[v+1]
+				love.graphics.setColor(c[1],c[2],c[3],255)
+				love.graphics.rectangle('fill', sx, sy, 8, 8)
+				sx = sx + 8
+			end
+		end
+	end	
+	
+	love.graphics.setColor(255,255,255,255)
 end
 
 function love.update(dt)
+	mapRasterizer:rasterize(point:new(rasterX,rasterY), point:new(8,8))
+		
 	local updatePerlin = false
 	if love.keyboard.isDown('up') then
 		islandFactor = islandFactor + 0.05
@@ -712,6 +752,20 @@ function love.update(dt)
 end
 
 function love.keyreleased(key)
+	if key == 'u' then
+		rasterY = rasterY - 8
+	end
+	if key == 'j' then
+		rasterY = rasterY + 8
+	end
+	if key == 'h' then
+		rasterX = rasterX - 8
+	end
+	if key == 'k' then
+		rasterX = rasterX + 8
+	end
+
+	
 	if key == 'w' then
 		showPerlin = 1 - showPerlin
 	end
@@ -754,4 +808,5 @@ function love.keyreleased(key)
 		drawMode = 'territories'
 		drawMap()
 	end			
-end
+
+	end

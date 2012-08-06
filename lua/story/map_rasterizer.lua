@@ -40,23 +40,23 @@ function MapRasterizer:_clone(values)
 	o._biomeMap = 
 	{
 		OCEAN = 0,
-		LAKE = 3,
-		MARSH = 3,
-		ICE = 1,
-		BEACH = 1,
-		SNOW = 1,
-		TUNDRA = 1,
-		BARE = 1,
-		SCORCHED = 6,
-		TAIGA = 2,
-		SHRUBLAND = 4,
-		GRASSLAND = 5,
-		TEMPERATE_DESERT = 6,
-		TEMPERATE_DECIDUOUS_FOREST = 2,
-		TEMPERATE_RAIN_FOREST = 3,
-		TROPICAL_RAIN_FOREST = 3,
-		TROPICAL_SEASONAL_FOREST = 3,
-		SUBTROPICAL_DESERT = 6
+		LAKE = 1,
+		MARSH = 2,
+		ICE = 3,
+		BEACH = 4,
+		SNOW = 5,
+		TUNDRA = 6,
+		BARE = 7,
+		SCORCHED = 8,
+		TAIGA = 9,
+		SHRUBLAND = 10,
+		GRASSLAND = 11,
+		TEMPERATE_DESERT = 12,
+		TEMPERATE_DECIDUOUS_FOREST = 13,
+		TEMPERATE_RAIN_FOREST = 14,
+		TROPICAL_RAIN_FOREST = 15,
+		TROPICAL_SEASONAL_FOREST = 16,
+		SUBTROPICAL_DESERT = 17
 	}
 	
 	-- will store the cells to raster
@@ -111,6 +111,7 @@ function MapRasterizer:addCenterToBuckets(center)
 		if p.y > maxY then maxY = p.y end
 	end
 
+	minMaxPoints(center._rasterPoint)
 	for _, co in ipairs(center._corners) do
 		minMaxPoints(co._rasterPoint)
 	end
@@ -118,7 +119,6 @@ function MapRasterizer:addCenterToBuckets(center)
 	for y = minY, maxY, self._cellSize do
 		for x = minX, maxX, self._cellSize do
 			local hash = self:hash(x,y)
-			addToBucket(hash)
 			addToBucket(hash)
 		end
 	end
@@ -328,8 +328,8 @@ function MapRasterizer:rasterize(location, area)
 	log.log('Deciding what buckets to rasterasize...')	
 	local bucketsToRaster = {}		
 	profiler:profile('deciding what buckets to rasterasize', function()	
-		for y = location.y, location.y + area.y - 1, self._cellSize do
-			for x = location.x, location.x + area.x - 1, self._cellSize do			
+		for y = location.y - self._cellSize, location.y + area.y, self._cellSize do
+			for x = location.x - self._cellSize, location.x + area.x, self._cellSize do			
 				local hash = self:hash(x,y)
 				bucketsToRaster[hash] = self._buckets[hash]								
 			end
@@ -363,9 +363,9 @@ function MapRasterizer:rasterize(location, area)
 	log.log('Rasterizing map complete')	
 	log.log('==============================================')	
 	
-	self:saveMap('rastered.txt', self._tiles)
+	--self:saveMap('rastered.txt', self._tiles)
 	self:logProfiles()		
-	self:logDebug()	
+	--self:logDebug()	
 	
 	return tiles	
 end
