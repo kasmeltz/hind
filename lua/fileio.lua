@@ -4,6 +4,8 @@
 	Created JUL-23-2012
 ]]
 
+package.path = package.path .. ';.\\story\\?.lua' 
+
 require 'table_ext'
 require 'love.timer'
 require 'thread_communicator'
@@ -11,6 +13,50 @@ local log = require 'log'
 local marshal = require 'marshal'
 local thread = love.thread.getThread()
 local communicator = objects.ThreadCommunicator{ thread }
+
+require 'overworld_map_generator'
+require 'map_rasterizer'
+local point 			= require 'point'
+
+
+require 'map'
+
+local mapGenerator 
+local map 
+local mapRasterizer 
+function makeMap()
+	mapGenerator = objects.OverworldMapGenerator{}
+	mapGenerator:configure{ lloydCount = 2, pointCount = 20000,
+		lakeThreshold = 0.3, size = 1, riverCount = 1000,
+		factionCount = 6, seed = os.time(), islandFactor = 0.8,
+		landMass = 6, biomeFeatures = 2.5 }
+	map = mapGenerator:buildMap()
+	mapRasterizer = objects.MapRasterizer{map}
+	mapRasterizer._biomeMap = 
+	{
+		OCEAN = 0,
+		LAKE = 1,
+		MARSH = 1,
+		ICE = 1,
+		BEACH = 2,
+		SNOW = 2,
+		TUNDRA = 2,
+		BARE = 2,
+		SCORCHED = 2,
+		TAIGA = 3,
+		SHRUBLAND = 3,
+		GRASSLAND = 3,
+		TEMPERATE_DESERT = 4,
+		TEMPERATE_DECIDUOUS_FOREST = 4,
+		TEMPERATE_RAIN_FOREST = 4,
+		TROPICAL_RAIN_FOREST = 4,
+		TROPICAL_SEASONAL_FOREST = 5,
+		SUBTROPICAL_DESERT = 5
+	}	
+	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(4096,4096))
+end
+
+makeMap()
 
 local commands = 
 {
@@ -114,9 +160,47 @@ end
 --
 function loadMapCell(hash)
 	log.log('Load Map Cell: ' .. hash)		
+	local x, y = objects.Map.unhash(hash)
+	
+	log.log('x: ' .. x .. ', y: ' .. y)
 	
 	local tiles, area, actors
 	
+	log.log('rasterizing')
+	
+	mapRasterizer:rasterize(point:new(x,y), point:new(8,8))
+	
+	log.log('rasterized')
+	
+	tiles = {}
+	for i = 1, 4 do
+		tiles[i] = {}
+		for y = 1, 8 do
+			tiles[i][y] = {}
+			for x = 1, 8 do
+				tiles[i][y][x] = (18 * mapRasterizer._tiles[y][x]) + 11
+			end
+		end
+	end
+	tiles[5] = {}
+	tiles[6] = {}
+	for y = 1, 8 do
+		tiles[6][y] = {}
+		for x = 1, 8 do
+			tiles[6][y][x] = 0
+		end
+	end
+	
+	
+	log.log('tiles copied')
+	
+	tiles = marshal.encode(tiles)
+	
+	log.log('tiles encoded')
+	
+	area = 'GRASSLAND'
+	
+	--[[
 	local f = io.open('map/' .. hash .. '.dat', 'rb')
 	if not f then 
 		log.log('There was a problem loading the cell #' .. hash)
@@ -130,6 +214,7 @@ function loadMapCell(hash)
 	f:read(1)
 	area = f:read(bytes)	
 	f:close()	
+	]]
 	
 	local f = io.open('map/act-' .. hash .. '.dat' ,'rb')		
 	if not f then 
@@ -138,6 +223,8 @@ function loadMapCell(hash)
 		actors = f:read('*all')
 		f:close()
 	end
+	
+	actors = actors or marshal.encode{}
 	
 	communicator:send('loadedMapCell', hash)
 	communicator:send('loadedMapCell', tiles)
@@ -177,6 +264,7 @@ end
 -- LOOP FOREVER!
 log.log('File io server waiting for input...')
 while true do
+	local result, err = true, nil
 	local cmd, msg = receiveAll()
 	if cmd == 'saveActor' then
 		saveActor(msg)
@@ -187,10 +275,14 @@ while true do
 	elseif cmd == 'saveMapCell' then
 		saveMapCell(msg)
 	elseif cmd == 'loadMapCell' then
-		loadMapCell(msg)
+		result = pcall(loadMapCell,msg)
 	elseif cmd == 'addActorToCell' then
 		addActorToCell(msg)
 	else
 		love.timer.sleep(0.001)
+	end
+	
+	if not result then
+		log.log(err)
 	end
 end

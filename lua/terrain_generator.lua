@@ -245,6 +245,27 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 		landMass = 6, biomeFeatures = 2.5 }
 	local map = mapGenerator:buildMap()
 	local mapRasterizer = MapRasterizer{map}
+	mapRasterizer._biomeMap = 
+	{
+		OCEAN = 0,
+		LAKE = 1,
+		MARSH = 1,
+		ICE = 1,
+		BEACH = 2,
+		SNOW = 2,
+		TUNDRA = 2,
+		BARE = 2,
+		SCORCHED = 2,
+		TAIGA = 3,
+		SHRUBLAND = 3,
+		GRASSLAND = 3,
+		TEMPERATE_DESERT = 4,
+		TEMPERATE_DECIDUOUS_FOREST = 4,
+		TEMPERATE_RAIN_FOREST = 4,
+		TROPICAL_RAIN_FOREST = 4,
+		TROPICAL_SEASONAL_FOREST = 5,
+		SUBTROPICAL_DESERT = 5
+	}	
 	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(sx,sy))
 	mapRasterizer:rasterize(point:new(0,0), point:new(sx,sy))
 	 	
@@ -261,6 +282,7 @@ function TerrainGenerator:generate(xpos, ypos, sx, sy, heroName)
 			areas[y][x] = ' '
 		end
 	end		
+	
 	--[[ @TODO need to figure out how to do this properly
 	for _, c in pairs(map._centers) do
 		local r = mapRasterizer:convertPoint(c._point)

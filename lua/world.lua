@@ -94,8 +94,8 @@ function World:initialize()
 	self._camera:window(500000*32,500000*32,width,height)
 	self._camera:viewport(0,0,width,height)
 	
-	self._terrainGenerator = factories.createTerrainGenerator('outdoor')		
-	self._terrainGenerator:generate(499872,499872,256,256,'Sir Gallahad')
+	--self._terrainGenerator = factories.createTerrainGenerator('outdoor')		
+	--self._terrainGenerator:generate(499872,499872,256,256,'Sir Gallahad')
 	
 	self._map = factories.createMap('outdoor')	
 	self._map._profiler = self._profiler
@@ -481,8 +481,10 @@ function World:createHero()
 	]]
 	
 	-- put the hero in the middle of the map for fun
-	local tileX = 500000
-	local tileY = 500000
+	--local tileX = 500000
+	--local tileY = 500000
+	local tileX = 2048
+	local tileY = 2048
 	local ts = self._map._tileSet:size()	
 	hero:position(tileX*ts[1], tileY*ts[2])
 	hero:update(0.16)

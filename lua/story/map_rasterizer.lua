@@ -307,14 +307,14 @@ end
 function MapRasterizer:rasterize(location, area)
 	local profiler = self._profiler
 	
-	log.log('==============================================')
-	log.log('Rasterizing map')
+	--log.log('==============================================')
+	--log.log('Rasterizing map')
 		
 	self._location = location
 	self._location1 = point:new(self._location.x - 1, self._location.y - 1)
 	self._area = area	
 	
-	log.log('Blanking tile structure...')	
+	--log.log('Blanking tile structure...')	
 	local tiles = self._tiles
 	profiler:profile('creating tile structure', function()		
 		for y = 1, area.y do
@@ -325,7 +325,7 @@ function MapRasterizer:rasterize(location, area)
 	end) -- profile
 		
 	-- figure out what buckets to raster
-	log.log('Deciding what buckets to rasterasize...')	
+	--log.log('Deciding what buckets to rasterasize...')	
 	local bucketsToRaster = {}		
 	profiler:profile('deciding what buckets to rasterasize', function()	
 		for y = location.y - self._cellSize, location.y + area.y, self._cellSize do
@@ -353,18 +353,18 @@ function MapRasterizer:rasterize(location, area)
 	end) -- profile
 	
 	-- rasteramasize cells
-	log.log('Rasteramasizing cells...')
+	--log.log('Rasteramasizing cells...')
 	profiler:profile('rasteramasizing cells', function()	
 		for _, c in pairs(self._cellsToRaster) do
 			self:rasterCell(c, self._biomeMap[c._biome])
 		end
 	end) -- profile
 		
-	log.log('Rasterizing map complete')	
-	log.log('==============================================')	
+	--log.log('Rasterizing map complete')	
+	--log.log('==============================================')	
 	
 	--self:saveMap('rastered.txt', self._tiles)
-	self:logProfiles()		
+	--self:logProfiles()		
 	--self:logDebug()	
 	
 	return tiles	
