@@ -18,8 +18,8 @@ local Object 			= (require 'object').Object
 
 local perlin2D = perlin2D
 
-local pairs, math
-	= pairs, math
+local pairs, ipairs, math
+	= pairs, ipairs, math
 	
 module('objects')
 
@@ -189,7 +189,7 @@ function OverworldMapGenerator:assignOceanCoastAndLand(corners, centers)
 	local numWater
 	for _, p in pairs(centers) do
 		numWater = 0
-		for _, q in pairs(p._corners) do
+		for _, q in ipairs(p._corners) do
 			if q._border then
 				p._border = true
 				p._ocean = true
@@ -200,7 +200,7 @@ function OverworldMapGenerator:assignOceanCoastAndLand(corners, centers)
 				numWater = numWater + 1
 			end
 		end
-		p._water = p._ocean or numWater >= table.count(p._corners) * self._lakeThreshold
+		p._water = p._ocean or numWater >= #p._corners * self._lakeThreshold
 	end
 	
 	while queue:count() > 0 do
@@ -303,10 +303,10 @@ end
 function OverworldMapGenerator:assignPolygonElevations(centers)
 	for _, p in pairs(centers) do
 		local sumElevation = 0.0
-        for _, q in pairs(p._corners) do
+        for _, q in ipairs(p._corners) do
 			sumElevation = sumElevation + q._elevation
 		end
-		p._elevation = sumElevation / table.count(p._corners)
+		p._elevation = sumElevation / #p._corners
    end
 end 
 
@@ -459,13 +459,13 @@ end
 function OverworldMapGenerator:assignPolygonMoisture(centers)
 	for _, p in pairs(centers) do
 		local sumMoisture = 0.0
-		for _, q in pairs(p._corners) do
+		for _, q in ipairs(p._corners) do
 			if q._moisture > 1.0 then 
 				q._moisture = 1.0
 			end
 			sumMoisture = sumMoisture + q._moisture
 		end
-		p._moisture = sumMoisture / table.count(p._corners)
+		p._moisture = sumMoisture / #p._corners
 	end
 end
 	

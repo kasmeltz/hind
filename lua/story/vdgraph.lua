@@ -127,13 +127,9 @@ function buildGraph(po, co, aj)
 		local d2 = makeCenter(p2)
 		
 		d1._borders[e._id] = e 
-		d1._corners[v1._id] = v1
-		d1._corners[v2._id] = v2
 		d1._neighbors[d2._id] = d2
 		d2._neighbors[d1._id] = d1		
 		d2._borders[e._id] = e 
-		d2._corners[v1._id] = v1
-		d2._corners[v2._id] = v2	
 		v1._protrudes[e._id] = e 
 		v1._touches[d1._id] = d1
 		v1._touches[d2._id] = d2
@@ -149,6 +145,16 @@ function buildGraph(po, co, aj)
 		e._d2 = d2
 		
 		edges[#edges + 1] = e
+	end
+	
+	-- make the centers corners an indexed table
+	for _, ce in pairs(centers) do		
+		local ic = {}
+		for _, ed in pairs(ce._borders) do
+			ic[#ic + 1] = ed._v1
+			ic[#ic + 1] = ed._v2
+		end
+		ce._corners = ic
 	end
 
 	return centers, corners, edges

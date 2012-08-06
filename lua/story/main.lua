@@ -144,8 +144,32 @@ function love.load()
 	buildMap()
 	mapRasterizer = objects.MapRasterizer{ map }
 	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(4096,4096))
-	mapRasterizer:rasterize(point:new(1024,1024), point:new(32,32))
+	mapRasterizer:rasterize(point:new(2048,2048), point:new(8,8))
 	drawMap()
+end
+
+--
+--  Draws noisy edges
+--
+function getNoisyEdges(id)
+	local p1 = {}
+	local p2 = {}
+		
+	local segs = nEdges1[id]
+	if segs then
+		for _, v in ipairs(segs) do
+			p1[#p1+1] = v
+		end
+	end
+	
+	local segs = nEdges2[id]
+	if segs then
+		for _, v in ipairs(segs) do
+			p2[#p2+1] = v
+		end	
+	end
+	
+	return p1, p2
 end
 
 function plot2D(values)
@@ -183,30 +207,6 @@ local biomeColors =
 		SUBTROPICAL_DESERT = { 170, 170, 0 }
 	}
 	
---
---  Draws noisy edges
---
-function getNoisyEdges(id)
-	local p1 = {}
-	local p2 = {}
-		
-	local segs = nEdges1[id]
-	if segs then
-		for _, v in ipairs(segs) do
-			p1[#p1+1] = v
-		end
-	end
-	
-	local segs = nEdges2[id]
-	if segs then
-		for _, v in ipairs(segs) do
-			p2[#p2+1] = v
-		end	
-	end
-	
-	return p1, p2
-end
-
 function drawBiomes(cnv)
 	local sw, sh 
 	
@@ -241,26 +241,44 @@ function drawBiomes(cnv)
 		end
 		]]
 		
-		for _, ed in pairs(ce._borders) do			
-			if ed._v1 and ed._v2 then
+		for i = 1, #ce._corners do	
+			local ind = (i%#ce._corners) + 1
+			
+			local co1 = ce._corners[i]
+			local co2 = ce._corners[ind]
+			
+		--for _, ed in pairs(ce._borders) do			
+			--if ed._v1 and ed._v2 then
 				--[[
 				local p1, p2 = getNoisyEdges(ed._id)
 				addNoisyVerts(p1)
 				addNoisyVerts(p2)
 				]]				
+				--[[
 				local x1 = ed._v1._point.x
 				local y1 = ed._v1._point.y
 				local x2 = ed._v2._point.x
 				local y2 = ed._v2._point.y
+				]]
+				local x1 = co1._point.x
+				local y1 = co1._point.y
+				local x2 = co2._point.x
+				local y2 = co2._point.y
+				
 				verts[#verts+1] = x1 * sw
 				verts[#verts+1] = y1 * sh
 				verts[#verts+1] = x2 * sw
 				verts[#verts+1] = y2 * sh
-			end
-		end		
+			--end
+		end	
 		
 		if #verts >= 6 then
 			love.graphics.polygon('fill', verts)
+		end
+		
+		if mapRasterizer._cellsToRaster[ce._id] then
+			love.graphics.setColor(255,0,255,255)
+			love.graphics.circle('fill', ce._point.x * sw, ce._point.y * sh, 1)
 		end
 	end
 	
@@ -317,6 +335,9 @@ function drawBiomes(cnv)
 			end		
 		end
 	end
+	
+	love.graphics.setColor(0,255,255,255)
+	love.graphics.rectangle('line', sw / 2, sh / 2, 8 / 4096 * sw, 8 / 4096 * sh)
 	
 	love.graphics.setCanvas()
 end
@@ -497,7 +518,7 @@ function drawElevation(cnv)
 		love.graphics.circle( 'fill', x, y, 2)
 	end		
 	
-	for k, c in pairs(map._corners) do
+	for _, c in pairs(map._corners) do
 		local x = c._point.x
 		local y = c._point.y		
 		x = x * sw
@@ -583,7 +604,7 @@ function drawMoisture(cnv)
 		love.graphics.circle( 'fill', x, y, 2)
 	end		
 	
-	for k, c in pairs(map._corners) do
+	for _, c in pairs(map._corners) do
 		local x = c._point.x
 		local y = c._point.y		
 		x = x * sw
