@@ -26,7 +26,7 @@ local map
 local mapRasterizer 
 function makeMap()
 	mapGenerator = objects.OverworldMapGenerator{}
-	mapGenerator:configure{ lloydCount = 2, pointCount = 20000,
+	mapGenerator:configure{ lloydCount = 2, pointCount = 600000,
 		lakeThreshold = 0.3, size = 1, riverCount = 1000,
 		factionCount = 6, seed = os.time(), islandFactor = 0.8,
 		landMass = 6, biomeFeatures = 2.5 }
@@ -36,25 +36,205 @@ function makeMap()
 	{
 		OCEAN = 0,
 		LAKE = 1,
-		MARSH = 1,
-		ICE = 1,
-		BEACH = 2,
-		SNOW = 2,
-		TUNDRA = 2,
-		BARE = 2,
-		SCORCHED = 2,
-		TAIGA = 3,
-		SHRUBLAND = 3,
-		GRASSLAND = 3,
-		TEMPERATE_DESERT = 4,
-		TEMPERATE_DECIDUOUS_FOREST = 4,
-		TEMPERATE_RAIN_FOREST = 4,
-		TROPICAL_RAIN_FOREST = 4,
-		TROPICAL_SEASONAL_FOREST = 5,
-		SUBTROPICAL_DESERT = 5
+		MARSH = 2,
+		ICE = 3,
+		BEACH = 4,
+		SNOW = 5,
+		TUNDRA = 6,
+		BARE = 7,
+		SCORCHED = 8,
+		TAIGA = 9,
+		SHRUBLAND = 10,
+		GRASSLAND = 11,
+		TEMPERATE_DESERT = 12,
+		TEMPERATE_DECIDUOUS_FOREST = 13,
+		TEMPERATE_RAIN_FOREST = 14,
+		TROPICAL_RAIN_FOREST = 15,
+		TROPICAL_SEASONAL_FOREST = 16,
+		SUBTROPICAL_DESERT = 17
 	}	
-	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(4096,4096))
+	mapRasterizer:initialize(point:new(0,0), point:new(1,1), point:new(8192,8192))
 end
+
+--
+--  Adds transition (overlay tiles)
+--  between base terrain types
+--
+--  This function assumes that each base tile type 
+--	consists of 18 tiles with the following and that the base tile 
+--	types start at index 1 and are contiguous in 
+--	a tileset
+--  
+function transitions(tiles)
+	local tilesPerType = 18
+	
+	--  a table that maps the edge number
+	--  to a tile index in the tileset
+	--  n.b. this table describes some assumptions about the
+	--  layout of the tiles 
+	local edgeToTileIndex = {}
+	
+	-- top edge
+	edgeToTileIndex[4] = 14
+	edgeToTileIndex[6] = 14
+	edgeToTileIndex[12] = 14
+	edgeToTileIndex[14] = 14
+	
+	-- bottom edge
+	edgeToTileIndex[128] = 8
+	edgeToTileIndex[192] = 8
+	edgeToTileIndex[384] = 8
+	edgeToTileIndex[448] = 8	
+		
+	-- left edge	
+	edgeToTileIndex[16] = 12
+	edgeToTileIndex[18] = 12
+	edgeToTileIndex[80] = 12
+	edgeToTileIndex[82] = 12
+	
+	-- right edge
+	edgeToTileIndex[32] = 10
+	edgeToTileIndex[40] = 10
+	edgeToTileIndex[288] = 10
+	edgeToTileIndex[296] = 10
+	
+	-- top left edge	
+	edgeToTileIndex[20] = 2
+	edgeToTileIndex[22] = 2
+	edgeToTileIndex[24] = 2
+	edgeToTileIndex[28] = 2
+	edgeToTileIndex[30] = 2
+	edgeToTileIndex[68] = 2
+	edgeToTileIndex[72] = 2
+	edgeToTileIndex[76] = 2
+	edgeToTileIndex[84] = 2
+	edgeToTileIndex[86] = 2
+	edgeToTileIndex[88] = 2
+	edgeToTileIndex[92] = 2
+	edgeToTileIndex[94] = 2
+	edgeToTileIndex[126] = 2	
+	
+	-- top right edge
+	edgeToTileIndex[34] = 3
+	edgeToTileIndex[36] = 3
+	edgeToTileIndex[38] = 3
+	edgeToTileIndex[44] = 3
+	edgeToTileIndex[46] = 3
+	edgeToTileIndex[258] = 3	
+	edgeToTileIndex[260] = 3
+	edgeToTileIndex[262] = 3
+	edgeToTileIndex[290] = 3
+	edgeToTileIndex[292] = 3
+	edgeToTileIndex[294] = 3
+	edgeToTileIndex[298] = 3		
+	edgeToTileIndex[300] = 3
+	edgeToTileIndex[302] = 3	
+	edgeToTileIndex[318] = 3
+	
+	-- bottom left edge
+	edgeToTileIndex[130] = 5
+	edgeToTileIndex[144] = 5
+	edgeToTileIndex[146] = 5
+	edgeToTileIndex[208] = 5
+	edgeToTileIndex[210] = 5
+	edgeToTileIndex[218] = 5
+	edgeToTileIndex[272] = 5	
+	edgeToTileIndex[274] = 5	
+	edgeToTileIndex[386] = 5
+	edgeToTileIndex[400] = 5
+	edgeToTileIndex[402] = 5	
+	edgeToTileIndex[464] = 5
+	edgeToTileIndex[466] = 5		
+		
+	-- bottom right edge
+	edgeToTileIndex[96] = 6
+	edgeToTileIndex[104] = 6	
+	edgeToTileIndex[136] = 6	
+	edgeToTileIndex[160] = 6	
+	edgeToTileIndex[168] = 6	
+	edgeToTileIndex[200] = 6
+	edgeToTileIndex[224] = 6
+	edgeToTileIndex[232] = 6
+	edgeToTileIndex[416] = 6	
+	edgeToTileIndex[424] = 6
+	edgeToTileIndex[480] = 6
+	edgeToTileIndex[488] = 6	
+	
+	-- bottom right inner edge
+	edgeToTileIndex[2] = 15	
+		
+	-- bottom left inner edge
+	edgeToTileIndex[8] = 13
+	
+	-- top right inner edge
+	edgeToTileIndex[64] = 9
+	
+	-- top left inner edge
+	edgeToTileIndex[256] = 7
+	
+	local sy = #tiles[1]
+	local sx = #tiles[1][1]
+	
+	local edges = {}
+	for y = 1, sy do
+		edges[y] = {}
+		for x = 1, sx do	
+			edges[y][x]	= {}
+		end
+	end
+			
+	for y = 1, sy do
+		for x = 1, sx do			
+			local tile = tiles[1][y][x]
+			local thisType = math.floor((tile - 1)/tilesPerType)
+
+			local count = 8
+			-- considsr all neighbouring tiles
+			for yy = y - 1, y + 1 do
+				for xx = x - 1, x + 1 do
+					-- only work to edge of map
+					if yy >= 1 and yy <= sy and
+						xx >= 1 and xx <= sx and
+						not (y == yy and x == xx) then
+							local neighbourTile = tiles[1][yy][xx]
+							local neighbourType = math.floor((neighbourTile-1)/tilesPerType)							
+							if neighbourType > thisType then								
+								local edgeType = edges[yy][xx][2 ^ count]
+								if (not edgeType) or (edgeType > thisType) then
+									edges[yy][xx][2 ^ count] = thisType
+								end
+							end
+							count = count - 1
+					end										
+				end
+			end		
+		end	
+	end
+	
+	for y = 1, sy do
+		for x = 1, sx do	
+			local edgeList = edges[y][x]	
+			local sum = 0
+			local edgeType = 0
+			local minEdgeType = 99
+			for k, v in pairs(edgeList) do
+				sum = sum + k
+				if v < minEdgeType then
+					edgeType = v
+					minEdgeType = v
+				end
+			end
+			
+			if sum > 0 then
+				local idx = edgeToTileIndex[sum] or 4
+				tiles[2][y][x] = (edgeType * tilesPerType) + idx
+			end
+		end	
+	end	
+
+	edges = nil
+end
+
 
 makeMap()
 
@@ -159,29 +339,36 @@ end
 --  Load a map cell from disk
 --
 function loadMapCell(hash)
-	log.log('Load Map Cell: ' .. hash)		
+	--log.log('Load Map Cell: ' .. hash)		
 	local x, y = objects.Map.unhash(hash)
-	
-	log.log('x: ' .. x .. ', y: ' .. y)
+	--log.log('x: ' .. x .. ', y: ' .. y)
 	
 	local tiles, area, actors
 	
-	log.log('rasterizing')
+	--log.log('rasterizing')
 	
+	local st = love.timer.getMicroTime()
 	mapRasterizer:rasterize(point:new(x,y), point:new(8,8))
+	log.log('Rastering took ' .. love.timer.getMicroTime() - st)
 	
-	log.log('rasterized')
+	--log.log('rasterized')
+
+	local st = love.timer.getMicroTime()
 	
 	tiles = {}
 	for i = 1, 4 do
 		tiles[i] = {}
 		for y = 1, 8 do
 			tiles[i][y] = {}
-			for x = 1, 8 do
-				tiles[i][y][x] = (18 * mapRasterizer._tiles[y][x]) + 11
-			end
 		end
 	end
+	
+	for y = 1, 8 do
+		for x = 1, 8 do
+			tiles[1][y][x] = (18 * (mapRasterizer._tiles[y][x])) + 11			
+		end
+	end
+	
 	tiles[5] = {}
 	tiles[6] = {}
 	for y = 1, 8 do
@@ -190,13 +377,24 @@ function loadMapCell(hash)
 			tiles[6][y][x] = 0
 		end
 	end
+
+	log.log('Creating stupid arse table took ' .. love.timer.getMicroTime() - st)
 	
+	local st = love.timer.getMicroTime()
 	
-	log.log('tiles copied')
+	transitions(tiles)
+	
+	log.log('Calculating transitions took ' .. love.timer.getMicroTime() - st)		
+		
+	--log.log('tiles copied')
+	
+	local st = love.timer.getMicroTime()
 	
 	tiles = marshal.encode(tiles)
 	
-	log.log('tiles encoded')
+	log.log('Marshal encoding took ' .. love.timer.getMicroTime() - st)
+	
+	--log.log('tiles encoded')
 	
 	area = 'GRASSLAND'
 	

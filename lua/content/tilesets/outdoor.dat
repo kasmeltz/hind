@@ -2,6 +2,35 @@
 	_name = 'outdoor',
 	_size = { 32, 32 },
 	_images = {
+		{	_file = '/content/images/terrain/ocean.png',
+			_boundaries = { 
+				{ 2, 2, 30, 30 },
+				{ 0, 0, 24, 24 },
+				{ 8, 0, 32, 24 },
+				{ 2, 2, 30, 30 },
+				{ 0, 8, 24, 32 },
+				{ 8, 8, 32, 32 },
+				{ 8, 8, 32, 32 },
+				{ 0, 8, 32, 32 },
+				{ 0, 8, 24, 32 },
+				{ 8, 0, 32, 32 },
+				{ 0, 0, 0, 0 },
+				{ 0, 0, 24, 32 },
+				{ 8, 0, 32, 24 },
+				{ 0, 0, 32, 24 },
+				{ 0, 0, 24, 24 },				
+				{ 0, 0, 0, 0 },
+				{ 0, 0, 0, 0 },
+				{ 0, 0, 0, 0 }
+			},
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},	
 		{	_file = '/content/images/terrain/water.png',
 			_boundaries = { 
 				{ 2, 2, 30, 30 },
@@ -31,7 +60,7 @@
 				2, 2, 2,
 				0, 0, 0}
 		},	
-		{	_file = '/content/images/terrain/tallgrass.png',
+		{	_file = '/content/images/terrain/marsh.png',
 			_boundaries = { default = nil },
 			_heights = { 
 				2, 2, 2,
@@ -41,17 +70,7 @@
 				2, 2, 2,
 				0, 0, 0}
 		},
-		{	_file = '/content/images/terrain/youngwheat.png',
-			_boundaries = { default = nil },
-			_heights = { 
-				2, 2, 2,
-				2, 2, 2,
-				2, 2, 2,
-				2, 0, 2,
-				2, 2, 2,
-				0, 0, 0}
-		},
-		{	_file = '/content/images/terrain/wheat.png',
+		{	_file = '/content/images/terrain/ice.png',
 			_boundaries = { default = nil },
 			_heights = { 
 				2, 2, 2,
@@ -61,6 +80,36 @@
 				2, 2, 2,
 				0, 0, 0}
 		},		
+		{	_file = '/content/images/terrain/beach.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},				
+		{	_file = '/content/images/terrain/snow.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},				
+		{	_file = '/content/images/terrain/tundra.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},						
 		{	_file = '/content/images/terrain/dirt.png',
 			_boundaries = { default = nil },
 			_heights = { 
@@ -71,6 +120,36 @@
 				2, 2, 2,
 				0, 0, 0}
 		},	
+		{	_file = '/content/images/terrain/scorched.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},	
+		{	_file = '/content/images/terrain/taiga.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},	
+		{	_file = '/content/images/terrain/shrubland.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},			
 		{	_file = '/content/images/terrain/grass.png',
 			_boundaries = { default = nil },
 			_heights = { 
@@ -81,6 +160,56 @@
 				2, 2, 2,
 				0, 0, 0}
 		},	
+		{	_file = '/content/images/terrain/temperate_desert.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},			
+		{	_file = '/content/images/terrain/decidious_forest.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},	
+		{	_file = '/content/images/terrain/temperate_rainforest.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},	
+		{	_file = '/content/images/terrain/tropical_rainforest.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},			
+		{	_file = '/content/images/terrain/savannah.png',
+			_boundaries = { default = nil },
+			_heights = { 
+				2, 2, 2,
+				2, 2, 2,
+				2, 2, 2,
+				2, 0, 2,
+				2, 2, 2,
+				0, 0, 0}
+		},			
 		{	_file = '/content/images/terrain/sand.png',
 			_boundaries = { default = nil },
 			_heights = { 
