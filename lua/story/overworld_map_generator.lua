@@ -18,8 +18,8 @@ local Object 			= (require 'object').Object
 
 local perlin2D = perlin2D
 
-local pairs, ipairs, math
-	= pairs, ipairs, math
+local pairs, ipairs, math, tostring
+	= pairs, ipairs, math, tostring
 	
 module('objects')
 
@@ -605,10 +605,13 @@ function OverworldMapGenerator:assignBiomeGroups(centers)
 	local function addNeighbors(q)
 		for _, r in pairs(q._neighbors) do
 			if r._biome == q._biome and not r._biomeGroup then
+				r._biomeGroup = biomeGroup
 				queue:pushright(r)
 			end
 		end
 	end
+	
+	local cc = 0
 	
 	local biomeIncrement = 0
 	for _, q in pairs(centers) do
@@ -617,13 +620,13 @@ function OverworldMapGenerator:assignBiomeGroups(centers)
 			q._biomeGroup = biomeGroup
 			biomeIncrement = 1
 			addNeighbors(q)
-		end
-		while queue:count() > 0 do
-			local r = queue:popleft()
-			r._biomeGroup = biomeGroup
-			addNeighbors(r)
+			while queue:count() > 0 do
+				local r = queue:popleft()				
+				addNeighbors(r)
+			end
 		end
 		biomeGroup = biomeGroup + biomeIncrement
+		cc = cc + 1
 	end
 end
 
@@ -747,13 +750,11 @@ function OverworldMapGenerator:buildMap()
 		self:assignBiomes(gCenters)
 	end) -- profile		
 
-	--[[
 	log.log('Assigning biome groups...')
 	profiler:profile('assign biome groups', function()
 		-- assign biome groups
 		self:assignBiomeGroups(self:landPolys(gCenters))
 	end) -- profile
-	]]
 	
 	log.log('Assigning territories...')
 	profiler:profile('assign territories', function()		
